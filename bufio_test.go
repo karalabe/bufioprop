@@ -22,15 +22,15 @@ func random(length int) []byte {
 }
 
 // Tests of various buffer sizes to catch index errors.
-func TestCopyBuffer3333(t *testing.T) {
+func TestCopyBuffer3333B(t *testing.T) {
 	testCopy(3333, t)
 }
 
-func TestCopyBuffer33333(t *testing.T) {
+func TestCopyBuffer33333B(t *testing.T) {
 	testCopy(33333, t)
 }
 
-func TestCopyBuffer333333(t *testing.T) {
+func TestCopyBuffer333333B(t *testing.T) {
 	testCopy(333333, t)
 }
 
@@ -46,6 +46,11 @@ func testCopy(buffer int, t *testing.T) {
 	}
 	if bytes.Compare(testData, wb.Bytes()) != 0 {
 		t.Errorf("copy did not work properly.")
+		for i := 0; i < len(testData); i++ {
+			if testData[i] != wb.Bytes()[i] {
+				t.Fatalf("first mismatch at %d: want 0x%02x, have 0x%02x.", i, testData[i], wb.Bytes()[i])
+			}
+		}
 	}
 }
 

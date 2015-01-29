@@ -35,8 +35,6 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 		for {
 			nr, er := src.Read(chunk)
 			if nr > 0 {
-				rpc := atomic.LoadInt32(&rp)
-
 				// Repeat until the chunk is pushed into the buffer
 				left := chunk
 				for {
@@ -63,21 +61,20 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 						copy(buf, left[bs-wp:nr])
 						nw = nr
 
-					case int(bac) < nr && wp <= rpc: // not enough space, no wrapping
+					case int(bac) < nr && wp+bac <= bs: // not enough space, no wrapping
 						copy(buf[wp:], left[:bac])
 						nw = int(bac)
 
-					case int(bac) < nr && wp > rpc: // not enough space, wrapping
+					case int(bac) < nr && wp+bac > bs: // not enough space, wrapping
 						copy(buf[wp:], left[:bs-wp])
 						copy(buf, left[bs-wp:bac])
 						nw = int(bac)
 					}
-					// Advance the writer pointer
-					wpn := wp + int32(nw)
-					if wpn >= bs {
-						wpn -= bs
+					// Update the write pointer and space availability
+					wp += int32(nw)
+					if wp >= bs {
+						wp -= bs
 					}
-					atomic.StoreInt32(&wp, wpn)
 					atomic.AddInt32(&ba, -int32(nw))
 
 					// Signal the writer if it's asleep
@@ -107,7 +104,6 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 		defer close(wq)
 
 		for {
-			wpc := atomic.LoadInt32(&wp)
 			bac := atomic.LoadInt32(&ba)
 
 			// If there's no data available, sleep
@@ -130,11 +126,11 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 			var we error
 
 			switch {
-			case rp < wpc: // data available, no wrapping
-				nc = wpc - rp
-				nw, we = dst.Write(buf[rp:wpc])
+			case rp-bac <= 0: // data available, no wrapping
+				nc = bs - bac
+				nw, we = dst.Write(buf[rp : rp+nc])
 
-			case rp >= wpc: // data available, wrapping
+			case rp-bac > 0: // data available, wrapping
 				nc = bs - rp
 				nw, we = dst.Write(buf[rp:])
 			}
@@ -150,12 +146,11 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 				err = io.ErrShortWrite
 				return
 			}
-			// Advance the reader pointer
-			rpn := rp + int32(nw)
-			if rpn >= bs {
-				rpn -= bs
+			// Update the write pointer and space availability
+			rp += int32(nw)
+			if rp >= bs {
+				rp -= bs
 			}
-			atomic.StoreInt32(&rp, rpn)
 			atomic.AddInt32(&ba, int32(nw))
 
 			// Signal the reader if it's asleep
