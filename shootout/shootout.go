@@ -25,7 +25,7 @@ var contenders = []contender{
 		return io.Copy(dst, src)
 	}},
 	// Second contender is the proposed bufio.Copy (currently at bufioprop.Copy)
-	{"bufio.Copy", bufioprop.Copy},
+	{"[!] bufio.Copy", bufioprop.Copy},
 
 	// Other contenders written by mailing list contributions
 	{"rogerpeppe.Copy", rogerpeppe.Copy},
