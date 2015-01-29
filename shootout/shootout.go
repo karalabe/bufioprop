@@ -14,6 +14,7 @@ import (
 	"github.com/karalabe/bufioprop/shootout/egonelbre"
 	"github.com/karalabe/bufioprop/shootout/jnml"
 	"github.com/karalabe/bufioprop/shootout/mattharden"
+	"github.com/karalabe/bufioprop/shootout/ncw"
 	"github.com/karalabe/bufioprop/shootout/rogerpeppe"
 	"github.com/karalabe/bufioprop/shootout/yiyus"
 	"github.com/olekukonko/tablewriter"
@@ -40,6 +41,7 @@ var contenders = []contender{
 	{"yiyus.Copy", yiyus.Copy},
 	{"egonelbre.Copy", egonelbre.Copy},
 	{"jnml.Copy", jnml.Copy},
+	{"ncw.Copy", ncw.Copy},
 }
 
 func main() {
