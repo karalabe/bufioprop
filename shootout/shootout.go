@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"os"
 	"runtime"
+	"strconv"
 	"time"
+
+	"github.com/olekukonko/tablewriter"
 
 	"github.com/karalabe/bufioprop"
 	"github.com/karalabe/bufioprop/shootout/egonelbre"
@@ -91,11 +95,22 @@ func main() {
 	}
 	fmt.Println("------------------------------------------------")
 	fmt.Println("High throughput benchmarks:")
+
+	buffers := []int{333, 4*1024 + 59, 64*1024 - 177, 1024*1024 - 17, 16*1024*1024 + 85}
+
+	table := tablewriter.NewWriter(os.Stdout)
+	header := []string{"Solution"}
+	for _, buf := range buffers {
+		header = append(header, "Buf-"+strconv.Itoa(buf))
+	}
+	table.SetHeader(header)
+
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
-			benchmark(data, []int{333, 4*1024 + 59, 64*1024 - 177, 1024*1024 - 17, 16*1024*1024 + 85}, copier)
+			benchmark(data, buffers, copier, table)
 		}
 	}
+	table.Render()
 }
 
 // Shootout runs a copy operation on the given input/output endpoints with the
