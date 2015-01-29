@@ -8,6 +8,8 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 	const page = 1 << 12
 
 	w := make(chan []byte, 1000)
+	defer close(w)
+
 	r := make(chan interface{}, 1000)
 
 	go func() {
@@ -31,7 +33,7 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 	}
 	var nn int64
 	for {
-		for i := 0; buffer < page || i == 0; i++ {
+		for buffer < page {
 			select {
 			case x := <-r:
 				switch x := x.(type) {
@@ -40,8 +42,18 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 				case int:
 					buffer += x
 				}
-			default:
 			}
+		}
+
+		select {
+		case x := <-r:
+			switch x := x.(type) {
+			case error:
+				return nn, x
+			case int:
+				buffer += x
+			}
+		default:
 		}
 
 		b := make([]byte, page)
@@ -54,7 +66,6 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 
 		if err != nil {
 			if err == io.EOF {
-				close(w)
 				for {
 					switch x := (<-r).(type) {
 					case nil:
