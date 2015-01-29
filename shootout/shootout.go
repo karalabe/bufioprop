@@ -90,7 +90,15 @@ func main() {
 }
 
 // Test verifies that an implementation works correctly under high load.
-func test(data []byte, copier contender) bool {
+func test(data []byte, copier contender) (result bool) {
+	// Make sure a panic doesn't kill the shootout
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("%15s: panic.\n", copier.Name)
+			result = false
+		}
+	}()
+	// Do a full speed copy to catch threading bugs
 	rb := bytes.NewBuffer(data)
 	wb := new(bytes.Buffer)
 
