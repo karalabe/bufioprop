@@ -13,7 +13,6 @@ import (
 	"github.com/karalabe/bufioprop/shootout/mattharden"
 	"github.com/karalabe/bufioprop/shootout/rogerpeppe"
 	"github.com/karalabe/bufioprop/shootout/yiyus"
-	"github.com/karalabe/bufioprop/shootout/jnml"
 )
 
 type copyFunc func(dst io.Writer, src io.Reader, buffer int) (int64, error)
@@ -36,7 +35,7 @@ var contenders = []contender{
 	{"mattharden.Copy", mattharden.Copy},
 	{"yiyus.Copy", yiyus.Copy},
 	{"egonelbre.Copy", egonelbre.Copy},
-	{"     jnml.Copy", jnml.Copy},
+	//{"jnml.Copy", jnml.Copy},
 }
 
 func main() {
