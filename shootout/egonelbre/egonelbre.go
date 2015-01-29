@@ -2,22 +2,64 @@ package egonelbre
 
 import (
 	"io"
-	"runtime"
 	"sync/atomic"
 )
 
-type process chan struct{}
+type process struct {
+	quit  chan struct{}
+	sleep chan struct{}
+}
 
-func newprocess() process { return make(process) }
-func (p process) exit()   { close(p) }
-func (p process) wait()   { <-p }
+func newprocess() process {
+	return process{
+		quit:  make(chan struct{}),
+		sleep: make(chan struct{}, 1),
+	}
+}
+func (p process) exit() { close(p.quit) }
+func (p process) wait() { <-p.quit }
 func (p process) exited() bool {
 	select {
-	case <-p:
+	case <-p.quit:
 		return true
 	default:
+		return false
 	}
+}
+
+func (p process) waitchange(other process, expect int32, pv *int32) (exited bool) {
+	// say we are sleep
+	p.sleep <- struct{}{}
+	v := atomic.LoadInt32(pv)
+
+	// go to sleep
+	for expect == v {
+		select {
+		case <-other.quit:
+			return true
+		case p.sleep <- struct{}{}:
+		}
+		v = atomic.LoadInt32(pv)
+	}
+
+	p.unwait()
 	return false
+}
+
+func (p process) unwait() {
+	// clear sleeping
+	select {
+	case <-p.sleep:
+	default:
+	}
+}
+
+func chunk(a []byte) []byte {
+	const maxchunk = 8 << 10
+	if len(a) > maxchunk {
+		return a[:maxchunk]
+	}
+	return a
 }
 
 func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
@@ -40,28 +82,31 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 		for rerr == nil && !w.exited() {
 			l := atomic.LoadInt32(&low)
 
-			// are we full, go to sleep
-			for (h+1)%buflen == l {
-				if w.exited() {
+			// are we full
+			if (h+1)%buflen == l {
+				if r.waitchange(w, l, &low) {
 					return
 				}
-				runtime.Gosched()
 				l = atomic.LoadInt32(&low)
 			}
 
 			var next []byte
-			if l <= h {
+			switch {
+			case l == 0:
+				next = buf[h : len(buf)-1]
+			case h < l:
+				next = buf[h : l-1]
+			case l <= h:
 				next = buf[h:]
-			} else if h < l {
-				next = buf[h:l]
 			}
 
 			var nr int
 			for len(next) > 0 && rerr == nil && !w.exited() {
-				nr, rerr = src.Read(next)
+				nr, rerr = src.Read(chunk(next))
 				next = next[nr:]
 				h = (h + int32(nr)) % buflen
 				atomic.StoreInt32(&high, h)
+				w.unwait()
 			}
 		}
 	}()
@@ -73,13 +118,12 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 		for werr == nil {
 			h := atomic.LoadInt32(&high)
 
-			// are we empty, go to sleep or exit
-			for l == h {
-				if r.exited() {
+			if l == h {
+				exited := w.waitchange(r, h, &high)
+				h = atomic.LoadInt32(&high)
+				if l == h && exited {
 					return
 				}
-				runtime.Gosched()
-				h = atomic.LoadInt32(&high)
 			}
 
 			var next []byte
@@ -95,6 +139,7 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 				atomic.AddInt64(&written, int64(nr))
 				l = (l + int32(nr)) % buflen
 				atomic.StoreInt32(&low, l)
+				r.unwait()
 				next = next[nr:]
 			}
 		}
@@ -103,5 +148,12 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 	// Wait until both finish and return
 	w.wait()
 	r.wait()
-	return
+
+	switch {
+	case rerr == nil || rerr == io.EOF:
+		return written, werr
+	// what if both errors happened?
+	default:
+		return written, rerr
+	}
 }
