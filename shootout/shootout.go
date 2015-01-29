@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"runtime"
 	"time"
 
 	"github.com/karalabe/bufioprop"
+	"github.com/karalabe/bufioprop/shootout/egonelbre"
 	"github.com/karalabe/bufioprop/shootout/mattharden"
 	"github.com/karalabe/bufioprop/shootout/rogerpeppe"
+	"github.com/karalabe/bufioprop/shootout/yiyus"
 )
 
 type copyFunc func(dst io.Writer, src io.Reader, buffer int) (int64, error)
@@ -30,36 +33,80 @@ var contenders = []contender{
 	// Other contenders written by mailing list contributions
 	{"rogerpeppe.Copy", rogerpeppe.Copy},
 	{"mattharden.Copy", mattharden.Copy},
+	{"yiyus.Copy", yiyus.Copy},
+	{"egonelbre.Copy", egonelbre.Copy},
 }
 
 func main() {
+	// Run on multiple threads to catch race bugs
+	runtime.GOMAXPROCS(8)
+
 	// Generate a random data source long enough to discover the issues
 	src := rand.NewSource(0)
 	data := make([]byte, 32*1024*1024)
 	for i := 0; i < len(data); i++ {
 		data[i] = byte(src.Int63() & 0xff)
 	}
+	// Run a batch of tests to make sure the function works
+	fmt.Println("High throughput tests:")
+	failed := make(map[string]struct{})
+	for _, copier := range contenders {
+		if !test(data, copier) {
+			failed[copier.Name] = struct{}{}
+		}
+	}
+	fmt.Println()
+
+	// We don't need such a huge blob for the shootout, reduce
+	data = data[:32*1024*1024]
+
 	// Simulate copying between various types of readers and writers
 	fmt.Println("Stable input, stable output:")
 	for _, copier := range contenders {
-		in, out := stableInput(data), stableOutput()
-		benchmark(in, out, len(data), copier)
+		if _, ok := failed[copier.Name]; !ok {
+			in, out := stableInput(data), stableOutput()
+			benchmark(in, out, len(data), copier)
+		}
 	}
 	fmt.Println()
 
 	fmt.Println("Stable input, bursty output:")
 	for _, copier := range contenders {
-		in, out := stableInput(data), burstyOutput()
-		benchmark(in, out, len(data), copier)
+		if _, ok := failed[copier.Name]; !ok {
+			in, out := stableInput(data), burstyOutput()
+			benchmark(in, out, len(data), copier)
+		}
 	}
 	fmt.Println()
 
 	fmt.Println("Bursty input, stable output:")
 	for _, copier := range contenders {
-		in, out := burstyInput(data), stableOutput()
-		benchmark(in, out, len(data), copier)
+		if _, ok := failed[copier.Name]; !ok {
+			in, out := burstyInput(data), stableOutput()
+			benchmark(in, out, len(data), copier)
+		}
 	}
 	fmt.Println()
+}
+
+// Test verifies that an implementation works correctly under high load.
+func test(data []byte, copier contender) bool {
+	rb := bytes.NewBuffer(data)
+	wb := new(bytes.Buffer)
+
+	if n, err := copier.Copy(wb, rb, 333333); err != nil { // weird buffer size to catch index bugs
+		fmt.Printf("%15s: failed to copy data: %v.\n", copier.Name, err)
+		return false
+	} else if int(n) != len(data) {
+		fmt.Printf("%15s: data length mismatch: have %d, want %d.\n", copier.Name, n, len(data))
+		return false
+	}
+	if bytes.Compare(data, wb.Bytes()) != 0 {
+		fmt.Printf("%15s: corrupt data on the output.\n", copier.Name)
+		return false
+	}
+	fmt.Printf("%15s: test passed.\n", copier.Name)
+	return true
 }
 
 // Benchmark runs a copy operation on the given input/output endpoints with the
@@ -69,7 +116,7 @@ func benchmark(r io.Reader, w io.Writer, size int, copier contender) {
 
 	start := time.Now()
 	if n, err := copier.Copy(w, r, buffer); int(n) != size || err != nil {
-		fmt.Printf("%10s: operation failed: have n %d, want n %d, err %v.\n", copier.Name, n, size, err)
+		fmt.Printf("%15s: operation failed: have n %d, want n %d, err %v.\n", copier.Name, n, size, err)
 		return
 	}
 	elapsed := time.Since(start)
