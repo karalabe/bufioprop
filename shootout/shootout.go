@@ -55,81 +55,63 @@ func main() {
 			failed[copier.Name] = struct{}{}
 		}
 	}
-	fmt.Println()
+	fmt.Println("------------------------------------------------")
 
 	// We don't need such a huge blob for the shootout, reduce
 	data = data[:32*1024*1024]
 
 	// Simulate copying between various types of readers and writers
-	fmt.Println("Stable input, stable output:")
+	fmt.Println("Stable input, stable output shootout:")
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
 			in, out := stableInput(data), stableOutput()
-			benchmark(in, out, len(data), copier)
+			if res := shootout(in, out, len(data), copier); res < 10 {
+				failed[copier.Name] = struct{}{}
+			}
 		}
 	}
-	fmt.Println()
-
-	fmt.Println("Stable input, bursty output:")
+	fmt.Println("\nStable input, bursty output shootout:")
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
 			in, out := stableInput(data), burstyOutput()
-			benchmark(in, out, len(data), copier)
+			if res := shootout(in, out, len(data), copier); res < 10 {
+				failed[copier.Name] = struct{}{}
+			}
 		}
 	}
-	fmt.Println()
-
-	fmt.Println("Bursty input, stable output:")
+	fmt.Println("\nBursty input, stable output shootout:")
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
 			in, out := burstyInput(data), stableOutput()
-			benchmark(in, out, len(data), copier)
+			if res := shootout(in, out, len(data), copier); res < 10 {
+				failed[copier.Name] = struct{}{}
+			}
 		}
 	}
-	fmt.Println()
-}
-
-// Test verifies that an implementation works correctly under high load.
-func test(data []byte, copier contender) (result bool) {
-	// Make sure a panic doesn't kill the shootout
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Printf("%15s: panic.\n", copier.Name)
-			result = false
+	fmt.Println("------------------------------------------------")
+	fmt.Println("High throughput benchmarks:")
+	for _, copier := range contenders {
+		if _, ok := failed[copier.Name]; !ok {
+			benchmark(data, []int{333, 4*1024 + 59, 64*1024 - 177, 1024*1024 - 17, 16*1024*1024 + 85}, copier)
 		}
-	}()
-	// Do a full speed copy to catch threading bugs
-	rb := bytes.NewBuffer(data)
-	wb := new(bytes.Buffer)
-
-	if n, err := copier.Copy(wb, rb, 333333); err != nil { // weird buffer size to catch index bugs
-		fmt.Printf("%15s: failed to copy data: %v.\n", copier.Name, err)
-		return false
-	} else if int(n) != len(data) {
-		fmt.Printf("%15s: data length mismatch: have %d, want %d.\n", copier.Name, n, len(data))
-		return false
 	}
-	if bytes.Compare(data, wb.Bytes()) != 0 {
-		fmt.Printf("%15s: corrupt data on the output.\n", copier.Name)
-		return false
-	}
-	fmt.Printf("%15s: test passed.\n", copier.Name)
-	return true
 }
 
-// Benchmark runs a copy operation on the given input/output endpoints with the
+// Shootout runs a copy operation on the given input/output endpoints with the
 // specified copy function.
-func benchmark(r io.Reader, w io.Writer, size int, copier contender) {
+func shootout(r io.Reader, w io.Writer, size int, copier contender) float64 {
 	buffer := 1024 * 1024
 
 	start := time.Now()
 	if n, err := copier.Copy(w, r, buffer); int(n) != size || err != nil {
 		fmt.Printf("%15s: operation failed: have n %d, want n %d, err %v.\n", copier.Name, n, size, err)
-		return
+		return -1
 	}
 	elapsed := time.Since(start)
 	throughput := float64(size) / (1024 * 1024) / float64(elapsed/time.Second)
 	fmt.Printf("%15s: %14v %10f mbps.\n", copier.Name, elapsed, throughput)
+
+	return throughput
 }
 
 // StableInput creates a 10MBps data source streaming stably in small chunks of
