@@ -12,7 +12,6 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 
 	go func() {
 		for chunk := range w {
-			nn := len(chunk)
 			for len(chunk) != 0 {
 				n, err := dst.Write(chunk)
 				if err != nil {
@@ -21,7 +20,7 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 				}
 				chunk = chunk[n:]
 			}
-			r <- nn
+			r <- chunk[:page]
 		}
 		r <- nil
 	}()
@@ -30,6 +29,7 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 		buffer = page
 	}
 	var nn int64
+	var pages [][]byte
 	for {
 		for buffer < page {
 			select {
@@ -38,30 +38,39 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 				case error:
 					close(w)
 					return nn, x
-				case int:
-					buffer += x
+				case []byte:
+					buffer += page
+					pages = append(pages, x)
 				}
 			}
 		}
-
 		select {
 		case x := <-r:
 			switch x := x.(type) {
 			case error:
 				close(w)
 				return nn, x
-			case int:
-				buffer += x
+			case []byte:
+				buffer += page
+				pages = append(pages, x)
 			}
 		default:
 		}
 
-		b := make([]byte, page)
+		var b []byte
+		switch n := len(pages); n {
+		case 0:
+			b = make([]byte, page)
+		default:
+			b = pages[n-1]
+			pages = pages[:n-1]
+			pages[n-1] = nil
+		}
 		n, err := src.Read(b)
 		if n != 0 {
 			nn += int64(n)
 			w <- b[:n]
-			buffer -= n
+			buffer -= page
 		}
 
 		if err != nil {
