@@ -43,7 +43,7 @@ func main() {
 
 	// Generate a random data source long enough to discover the issues
 	src := rand.NewSource(0)
-	data := make([]byte, 32*1024*1024)
+	data := make([]byte, 128*1024*1024)
 	for i := 0; i < len(data); i++ {
 		data[i] = byte(src.Int63() & 0xff)
 	}
