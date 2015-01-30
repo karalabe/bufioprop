@@ -5,7 +5,7 @@ import (
 )
 
 func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
-	page := 1 << 12
+	page := 1 << 16
 	if buffer < page {
 		page = buffer
 	}
