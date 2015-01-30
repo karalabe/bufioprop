@@ -5,13 +5,15 @@ import (
 )
 
 func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
-	const page = 1 << 12
-
+	page := 1 << 12
+	if buffer < page {
+		page = buffer
+	}
 	w := make(chan []byte, 1000)
 	r := make(chan interface{}, 1000)
-
 	go func() {
 		for chunk := range w {
+			c0 := chunk
 			for len(chunk) != 0 {
 				n, err := dst.Write(chunk)
 				if err != nil {
@@ -20,14 +22,10 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 				}
 				chunk = chunk[n:]
 			}
-			r <- chunk[:page]
+			r <- c0[:page]
 		}
 		r <- nil
 	}()
-
-	if buffer < page {
-		buffer = page
-	}
 	var nn int64
 	var pages [][]byte
 	for {
@@ -56,15 +54,14 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 			}
 		default:
 		}
-
 		var b []byte
 		switch n := len(pages); n {
 		case 0:
 			b = make([]byte, page)
 		default:
 			b = pages[n-1]
-			pages = pages[:n-1]
 			pages[n-1] = nil
+			pages = pages[:n-1]
 		}
 		n, err := src.Read(b)
 		if n != 0 {
@@ -72,7 +69,6 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 			w <- b[:n]
 			buffer -= page
 		}
-
 		if err != nil {
 			close(w)
 			if err == io.EOF {
@@ -85,7 +81,6 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 					}
 				}
 			}
-
 			return nn, err
 		}
 	}
