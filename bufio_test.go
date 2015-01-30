@@ -55,39 +55,39 @@ func testCopy(buffer int, t *testing.T) {
 }
 
 // Various combinations of benchmarks to measure the copy.
-func BenchmarkCopy1KbData1KbBuffer(b *testing.B) {
+func BenchmarkCopy1KbData1KbBuf(b *testing.B) {
 	benchmarkCopy(1024, 1024, b)
 }
 
-func BenchmarkCopy1KbData128KbBuffer(b *testing.B) {
+func BenchmarkCopy1KbData128KbBuf(b *testing.B) {
 	benchmarkCopy(1024, 128*1024, b)
 }
 
-func BenchmarkCopy1KbData1MbBuffer(b *testing.B) {
+func BenchmarkCopy1KbData1MbBuf(b *testing.B) {
 	benchmarkCopy(1024, 1024*1024, b)
 }
 
-func BenchmarkCopy1MbData1KbBuffer(b *testing.B) {
+func BenchmarkCopy1MbData1KbBuf(b *testing.B) {
 	benchmarkCopy(1024*1024, 1024, b)
 }
 
-func BenchmarkCopy1MbData128KbBuffer(b *testing.B) {
+func BenchmarkCopy1MbData128KbBuf(b *testing.B) {
 	benchmarkCopy(1024*1024, 128*1024, b)
 }
 
-func BenchmarkCopy1MbData1MbBuffer(b *testing.B) {
+func BenchmarkCopy1MbData1MbBuf(b *testing.B) {
 	benchmarkCopy(1024*1024, 1024*1024, b)
 }
 
-func BenchmarkCopy128MbData1KbBuffer(b *testing.B) {
+func BenchmarkCopy128MbData1KbBuf(b *testing.B) {
 	benchmarkCopy(128*1024*1024, 1024, b)
 }
 
-func BenchmarkCopy128MbData128KbBuffer(b *testing.B) {
+func BenchmarkCopy128MbData128KbBuf(b *testing.B) {
 	benchmarkCopy(128*1024*1024, 128*1024, b)
 }
 
-func BenchmarkCopy128MbData1MbBuffer(b *testing.B) {
+func BenchmarkCopy128MbData1MbBuf(b *testing.B) {
 	benchmarkCopy(128*1024*1024, 1024*1024, b)
 }
 

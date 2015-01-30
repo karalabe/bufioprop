@@ -3,6 +3,7 @@ package bufioprop
 
 import (
 	"io"
+	"runtime"
 	"sync/atomic"
 )
 
@@ -25,6 +26,8 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 	inPos := int32(0)  // Position in the buffer where input should be written
 	outPos := int32(0) // Position in the buffer from where output should be read
 
+	maxSpin := 16 // Spin lock prevent going down to channel syncs
+
 	inWake := make(chan struct{}, 1)  // signaler for the reader, if it's asleep
 	outWake := make(chan struct{}, 1) // signaler for the writer, if it's asleep
 
@@ -39,6 +42,10 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 			safeFree := atomic.LoadInt32(&free)
 
 			// If the buffer is full, wait
+			for i := 0; safeFree == 0 && i < maxSpin; i++ {
+				runtime.Gosched()
+				safeFree = atomic.LoadInt32(&free)
+			}
 			if safeFree == 0 {
 				select {
 				case <-inWake: // wake signal from writer, retry
@@ -88,6 +95,10 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 			safeFree := atomic.LoadInt32(&free)
 
 			// If there's no data available, sleep
+			for i := 0; safeFree == size && i < maxSpin; i++ {
+				runtime.Gosched()
+				safeFree = atomic.LoadInt32(&free)
+			}
 			if safeFree == size {
 				select {
 				case <-outWake: // wake signal from reader
