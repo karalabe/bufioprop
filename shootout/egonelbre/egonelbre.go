@@ -6,6 +6,11 @@ import (
 	"sync/atomic"
 )
 
+const (
+	maxChunk = 32 << 10
+	maxSpin  = 16
+)
+
 type process struct {
 	quit  chan struct{}
 	sleep chan struct{}
@@ -33,7 +38,7 @@ func (p process) waitchange(other process, expect int32, pv *int32) (exited bool
 	p.sleep <- struct{}{}
 	v := atomic.LoadInt32(pv)
 
-	const maxSpin = 16
+	// spin in case there is an immediate change
 	for i := 0; i < maxSpin && expect == v; i += 1 {
 		runtime.Gosched()
 		v = atomic.LoadInt32(pv)
@@ -61,10 +66,9 @@ func (p process) unwait() {
 	}
 }
 
-func maxsize(a int) int {
-	const maxchunk = 16 << 10
-	if a > maxchunk {
-		return maxchunk
+func maxchunk(a int) int {
+	if a > maxChunk {
+		return maxChunk
 	}
 	return a
 }
@@ -110,7 +114,7 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 
 			var nr int
 			for len(next) > 0 && rerr == nil && !w.exited() {
-				nr, rerr = src.Read(next[:maxsize(len(next))])
+				nr, rerr = src.Read(next[:maxchunk(len(next))])
 				next = next[nr:]
 				h = (h + int32(nr)) % buflen
 				atomic.StoreInt32(&high, h)
@@ -143,7 +147,7 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 
 			var nr int
 			for len(next) > 0 && werr == nil {
-				nr, werr = dst.Write(next[:maxsize(len(next))])
+				nr, werr = dst.Write(next[:maxchunk(len(next))])
 				written += int64(nr)
 				l = (l + int32(nr)) % buflen
 				atomic.StoreInt32(&low, l)

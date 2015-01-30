@@ -139,7 +139,7 @@ func main() {
 
 		header := []string{title}
 		for _, buf := range buffers {
-			header = append(header, "Buf-"+strconv.Itoa(buf))
+			header = append(header, strconv.Itoa(buf))
 		}
 		table.SetHeader(header)
 		for _, r := range results {
@@ -156,7 +156,7 @@ func main() {
 	fmt.Println()
 
 	table("Throughput", func(m Measurement) string {
-		return fmt.Sprintf("%5.2f mbps", m.Throughput(len(data)))
+		return fmt.Sprintf("%5.2f", m.Throughput(len(data)))
 	})
 
 	fmt.Println()
