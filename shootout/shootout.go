@@ -114,32 +114,37 @@ func main() {
 			benchmarkLatency(1000000, copier)
 		}
 	}
-	fmt.Printf("\nThroughput benchmarks (%d MB):\n", len(data)/1024/1024)
 
 	data = random(256 * 1024 * 1024)
+	procs := []int{1, 8}
 	buffers := []int{333, 4*1024 + 59, 64*1024 - 177, 1024*1024 - 17, 16*1024*1024 + 85}
 
-	table := tablewriter.NewWriter(os.Stdout)
-	header := []string{"Solution"}
-	for _, buf := range buffers {
-		header = append(header, "Buf-"+strconv.Itoa(buf))
-	}
-	table.SetHeader(header)
+	for _, proc := range procs {
+		runtime.GOMAXPROCS(proc)
+		fmt.Printf("\nThroughput benchmarks (GOMAXPROCS = %d):\n", runtime.GOMAXPROCS(0))
 
-	for _, copier := range contenders {
-		if _, ok := failed[copier.Name]; !ok {
-			// Run the benchmark
-			results := benchmarkThroughput(data, buffers, copier)
-
-			// Collect and report the results
-			row := []string{copier.Name}
-			for _, res := range results {
-				row = append(row, fmt.Sprintf("%.2f mbps", res))
-			}
-			table.Append(row)
+		table := tablewriter.NewWriter(os.Stdout)
+		header := []string{"Solution"}
+		for _, buf := range buffers {
+			header = append(header, "Buf-"+strconv.Itoa(buf))
 		}
+		table.SetHeader(header)
+
+		for _, copier := range contenders {
+			if _, ok := failed[copier.Name]; !ok {
+				// Run the benchmark
+				results := benchmarkThroughput(data, buffers, copier)
+
+				// Collect and report the results
+				row := []string{copier.Name}
+				for _, res := range results {
+					row = append(row, fmt.Sprintf("%.2f mbps", res))
+				}
+				table.Append(row)
+			}
+		}
+		table.Render()
 	}
-	table.Render()
 }
 
 // Shootout runs a copy operation on the given input/output endpoints with the
