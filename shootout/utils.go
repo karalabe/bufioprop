@@ -23,7 +23,7 @@ type Measurement struct {
 	Bytes    uint64
 }
 
-func (m *Measurement) Throughput(size int) float64 {
+func (m *Measurement) Throughput(size int64) float64 {
 	return float64(size) / (1024 * 1024) / m.Duration.Seconds()
 }
 

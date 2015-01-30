@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -38,6 +37,7 @@ var contenders = []contender{
 
 	// Other contenders written by mailing list contributions
 	{"rogerpeppe.Copy", rogerpeppe.Copy, ""},
+	{"rogerpeppe.IOCopy", rogerpeppe.IOCopy, ""},
 	{"mattharden.Copy", mattharden.Copy, ""},
 	{"yiyus.Copy", yiyus.Copy, ""},
 	{"egonelbre.Copy", egonelbre.Copy, ""},
@@ -65,10 +65,11 @@ func main() {
 	// Run a batch of tests to make sure the function works
 	fmt.Println("High throughput tests:")
 
-	data := random(128 * 1024 * 1024)
+	count := int64(128 * 1024 * 1024)
+	data := random(1024 * 1024)
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
-			if !test(data, copier) {
+			if !test(count, data, copier) {
 				failed[copier.Name] = struct{}{}
 			}
 		}
@@ -76,13 +77,13 @@ func main() {
 	fmt.Println("------------------------------------------------\n")
 
 	// Simulate copying between various types of readers and writers
-	data = random(32 * 1024 * 1024)
+	count = int64(32 * 1024 * 1024)
 
 	fmt.Println("Stable input, stable output shootout:")
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
-			in, out := stableInput(data), stableOutput()
-			if res := shootout(in, out, len(data), copier); res < 8 {
+			in, out := stableInput(count, data), stableOutput()
+			if res := shootout(in, out, count, copier); res < 8 {
 				failed[copier.Name] = struct{}{}
 			}
 		}
@@ -90,8 +91,8 @@ func main() {
 	fmt.Println("\nStable input, bursty output shootout:")
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
-			in, out := stableInput(data), burstyOutput()
-			if res := shootout(in, out, len(data), copier); res < 8 {
+			in, out := stableInput(count, data), burstyOutput()
+			if res := shootout(in, out, count, copier); res < 8 {
 				failed[copier.Name] = struct{}{}
 			}
 		}
@@ -99,8 +100,8 @@ func main() {
 	fmt.Println("\nBursty input, stable output shootout:")
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
-			in, out := burstyInput(data), stableOutput()
-			if res := shootout(in, out, len(data), copier); res < 8 {
+			in, out := burstyInput(count, data), stableOutput()
+			if res := shootout(in, out, count, copier); res < 8 {
 				failed[copier.Name] = struct{}{}
 			}
 		}
@@ -108,7 +109,7 @@ func main() {
 	fmt.Println("------------------------------------------------")
 
 	// Run various benchmarks of the remaining contenders
-	data = random(256 * 1024 * 1024)
+	count = 256 * 1024 * 1024
 	procs := []int{1, 8}
 	buffers := []int{333, 4*1024 + 59, 64*1024 - 177, 1024*1024 - 17, 16*1024*1024 + 85}
 
@@ -126,7 +127,7 @@ func main() {
 	for _, proc := range procs {
 		runtime.GOMAXPROCS(proc)
 
-		fmt.Printf("\nThroughput (GOMAXPROCS = %d) (%d MB):\n", proc, len(data)/1024/1024)
+		fmt.Printf("\nThroughput (GOMAXPROCS = %d) (%d MB):\n", proc, count/1024/1024)
 
 		type Result struct {
 			Name    string
@@ -136,7 +137,7 @@ func main() {
 		results := make([]Result, 0, len(contenders))
 		for _, copier := range contenders {
 			if _, ok := failed[copier.Name]; !ok {
-				res := benchmarkThroughput(data, buffers, copier)
+				res := benchmarkThroughput(count, data, buffers, copier)
 				results = append(results, Result{copier.Name, res})
 			}
 		}
@@ -161,7 +162,7 @@ func main() {
 
 		fmt.Println()
 		table("Throughput", func(m Measurement) string {
-			return fmt.Sprintf("%5.2f", m.Throughput(len(data)))
+			return fmt.Sprintf("%5.2f", m.Throughput(count))
 		})
 		fmt.Println()
 
@@ -173,11 +174,11 @@ func main() {
 
 // Shootout runs a copy operation on the given input/output endpoints with the
 // specified copy function.
-func shootout(r io.Reader, w io.Writer, size int, copier contender) float64 {
+func shootout(r io.Reader, w io.Writer, size int64, copier contender) float64 {
 	buffer := 12 * 1024 * 1024
 
 	c := NewCheckpoint()
-	if n, err := copier.Copy(w, r, buffer); int(n) != size || err != nil {
+	if n, err := copier.Copy(w, r, buffer); n != size || err != nil {
 		fmt.Printf("%15s: operation failed: have n %d, want n %d, err %v.\n", copier.Name, n, size, err)
 		return -1
 	}
@@ -190,13 +191,13 @@ func shootout(r io.Reader, w io.Writer, size int, copier contender) float64 {
 
 // StableInput creates a 10MBps data source streaming stably in small chunks of
 // 100KB each.
-func stableInput(data []byte) io.Reader {
-	return input(100*time.Millisecond, 1024*1024, data)
+func stableInput(count int64, data []byte) io.Reader {
+	return input(100*time.Millisecond, 1024*1024, dataReader(count, data))
 }
 
 // BurstyInput creates a 10MBps data source streaming in bursts of 10MB.
-func burstyInput(data []byte) io.Reader {
-	return input(1000*time.Millisecond, 10*1024*1024, data)
+func burstyInput(count int64, data []byte) io.Reader {
+	return input(1000*time.Millisecond, 10*1024*1024, dataReader(count, data))
 }
 
 // StableOutput creates a 10MBps data sink consuming stably in small chunks of
@@ -210,16 +211,16 @@ func burstyOutput() io.Writer {
 	return output(1000*time.Millisecond, 10*1024*1024)
 }
 
-// Input creates an unbuffered data source, filled at the specified rate.
-func input(cycle time.Duration, chunk int, data []byte) io.Reader {
-	source := bytes.NewBuffer(data)
-	buffer := make([]byte, chunk)
+// Input creates an unbuffered data source, filled at the specified rate
+// producing count bytes by reading the given source.
+func input(cycle time.Duration, chunk int, source io.Reader) io.Reader {
 	pr, pw := io.Pipe()
 
 	// Input generator that will produce data at a specified rate
 	go func() {
 		defer pw.Close()
 
+		buffer := make([]byte, chunk)
 		for {
 			// Make the next chunk available in the input stream
 			n, err := io.ReadFull(source, buffer)
@@ -230,7 +231,8 @@ func input(cycle time.Duration, chunk int, data []byte) io.Reader {
 			}
 			if err == io.EOF || err == io.ErrUnexpectedEOF {
 				return
-			} else if err != nil {
+			}
+			if err != nil {
 				panic(err)
 			}
 			// Sleep a while to simulate throughput
@@ -242,19 +244,20 @@ func input(cycle time.Duration, chunk int, data []byte) io.Reader {
 
 // Input creates an unbuffered data sink, emptied at the specified rate.
 func output(cycle time.Duration, chunk int) io.Writer {
-	buffer := make([]byte, chunk)
 	pr, pw := io.Pipe()
 
 	// Output reader that will consume data at a specified rate
 	go func() {
 		defer pr.Close()
 
+		buffer := make([]byte, chunk)
 		for {
 			// Consume the next chunk from the output stream
 			_, err := io.ReadFull(pr, buffer)
 			if err == io.EOF {
 				return
-			} else if err != nil {
+			}
+			if err != nil {
 				panic(err)
 			}
 			// Sleep a while to simulate throughput
@@ -262,4 +265,53 @@ func output(cycle time.Duration, chunk int) io.Writer {
 		}
 	}()
 	return pw
+}
+
+type replicatedDataReader struct {
+	p     int64
+	limit int64
+	data  []byte
+}
+
+// dataReader returns a reader that returns the given
+// data, replicated, returning a maximum of count
+// bytes before it returns EOF.
+func dataReader(count int64, data []byte) io.Reader {
+	// For efficiency, even if the data is small,
+	// we make it big enough that we can copy it
+	// in decent size chunks.
+	chunk := 1024 * 1024
+	buf := data[0:len(data):len(data)]
+	for len(buf) < chunk {
+		buf = append(buf, data...)
+	}
+	buf = append(buf, buf...)
+	buf = buf[0 : len(buf)/2]
+	return &replicatedDataReader{
+		limit: count,
+		data:  buf,
+	}
+}
+
+func (r *replicatedDataReader) Read(buf []byte) (int, error) {
+	nr := 0
+	for len(buf) > 0 {
+		remain := r.limit - r.p
+		if remain <= 0 {
+			return nr, io.EOF
+		}
+		need := len(buf)
+		if int(remain) < need {
+			need = int(remain)
+		}
+		if need > len(r.data) {
+			need = len(r.data)
+		}
+		off := int(r.p % int64(len(r.data)))
+		n := copy(buf, r.data[off:off+need])
+		buf = buf[n:]
+		nr += n
+		r.p += int64(n)
+	}
+	return nr, nil
 }

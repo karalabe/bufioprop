@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -37,10 +36,10 @@ func benchmarkLatency(iters int, copier contender) {
 
 // BenchmarkThroughput runs a high throughput copy to see how implementations compete if
 // not rate limited.
-func benchmarkThroughput(data []byte, buffers []int, copier contender) (results []Measurement) {
+func benchmarkThroughput(count int64, data []byte, buffers []int, copier contender) (results []Measurement) {
 	// Simulate the benchmark for every buffer size
 	for _, buffer := range buffers {
-		source := bytes.NewBuffer(data)
+		source := dataReader(count, data)
 
 		c := NewCheckpoint()
 		copier.Copy(ioutil.Discard, source, buffer)
