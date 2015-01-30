@@ -41,7 +41,7 @@ var contenders = []contender{
 	{"mattharden.Copy", mattharden.Copy, ""},
 	{"yiyus.Copy", yiyus.Copy, ""},
 	{"egonelbre.Copy", egonelbre.Copy, ""},
-	{"jnml.Copy", jnml.Copy, "unrecoverable panic in tests"},
+	{"jnml.Copy", jnml.Copy, ""},
 	{"ncw.Copy", ncw.Copy, "deadlock in latency benchmark"},
 	{"bakulshah.Copy", bakulshah.Copy, ""},
 }
