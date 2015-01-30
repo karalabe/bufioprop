@@ -2,7 +2,13 @@ package egonelbre
 
 import (
 	"io"
+	"runtime"
 	"sync/atomic"
+)
+
+const (
+	maxChunk = 32 << 10
+	maxSpin  = 16
 )
 
 type process struct {
@@ -32,6 +38,12 @@ func (p process) waitchange(other process, expect int32, pv *int32) (exited bool
 	p.sleep <- struct{}{}
 	v := atomic.LoadInt32(pv)
 
+	// spin in case there is an immediate change
+	for i := 0; i < maxSpin && expect == v; i += 1 {
+		runtime.Gosched()
+		v = atomic.LoadInt32(pv)
+	}
+
 	// go to sleep
 	for expect == v {
 		select {
@@ -54,10 +66,9 @@ func (p process) unwait() {
 	}
 }
 
-func chunk(a []byte) []byte {
-	const maxchunk = 8 << 10
-	if len(a) > maxchunk {
-		return a[:maxchunk]
+func maxchunk(a int) int {
+	if a > maxChunk {
+		return maxChunk
 	}
 	return a
 }
@@ -78,6 +89,8 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 	go func() {
 		defer r.exit()
 
+		var next []byte
+
 		h := atomic.LoadInt32(&high)
 		for rerr == nil && !w.exited() {
 			l := atomic.LoadInt32(&low)
@@ -90,7 +103,6 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 				l = atomic.LoadInt32(&low)
 			}
 
-			var next []byte
 			switch {
 			case l == 0:
 				next = buf[h : len(buf)-1]
@@ -102,7 +114,7 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 
 			var nr int
 			for len(next) > 0 && rerr == nil && !w.exited() {
-				nr, rerr = src.Read(chunk(next))
+				nr, rerr = src.Read(next[:maxchunk(len(next))])
 				next = next[nr:]
 				h = (h + int32(nr)) % buflen
 				atomic.StoreInt32(&high, h)
@@ -114,6 +126,7 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 	go func() {
 		defer w.exit()
 
+		var next []byte
 		l := atomic.LoadInt32(&low)
 		for werr == nil {
 			h := atomic.LoadInt32(&high)
@@ -126,7 +139,6 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 				}
 			}
 
-			var next []byte
 			if l < h {
 				next = buf[l:h]
 			} else if h <= l {
@@ -135,8 +147,8 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 
 			var nr int
 			for len(next) > 0 && werr == nil {
-				nr, werr = dst.Write(next)
-				atomic.AddInt64(&written, int64(nr))
+				nr, werr = dst.Write(next[:maxchunk(len(next))])
+				written += int64(nr)
 				l = (l + int32(nr)) % buflen
 				atomic.StoreInt32(&low, l)
 				r.unwait()

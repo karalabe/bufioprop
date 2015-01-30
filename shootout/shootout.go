@@ -126,29 +126,56 @@ func main() {
 	for _, proc := range procs {
 		runtime.GOMAXPROCS(proc)
 
-		fmt.Printf("\nThroughput benchmarks (GOMAXPROCS = %d):\n", runtime.GOMAXPROCS(0))
+		fmt.Printf("\nThroughput (GOMAXPROCS = %d) (%d MB):\n", proc, len(data)/1024/1024)
 
-		table := tablewriter.NewWriter(os.Stdout)
-		header := []string{"Solution"}
-		for _, buf := range buffers {
-			header = append(header, "Buf-"+strconv.Itoa(buf))
+		type Result struct {
+			Name    string
+			Results []Measurement
 		}
-		table.SetHeader(header)
 
+		results := make([]Result, 0, len(contenders))
 		for _, copier := range contenders {
 			if _, ok := failed[copier.Name]; !ok {
-				// Run the benchmark
-				results := benchmarkThroughput(data, buffers, copier)
+				r := benchmarkThroughput(data, buffers, copier)
+				results = append(results, Result{copier.Name, r})
+			}
+		}
 
-				// Collect and report the results
-				row := []string{copier.Name}
-				for _, res := range results {
-					row = append(row, fmt.Sprintf("%.2f mbps", res))
+		type formatter func(m Measurement) string
+		table := func(title string, format formatter) {
+			table := tablewriter.NewWriter(os.Stdout)
+			defer table.Render()
+
+			header := []string{title}
+			for _, buf := range buffers {
+				header = append(header, strconv.Itoa(buf))
+			}
+			table.SetHeader(header)
+			for _, r := range results {
+				row := []string{r.Name}
+				for _, res := range r.Results {
+					row = append(row, format(res))
 				}
 				table.Append(row)
 			}
+			table.Render()
 		}
-		table.Render()
+
+		fmt.Println()
+		table("Throughput", func(m Measurement) string {
+			return fmt.Sprintf("%5.2f", m.Throughput(len(data)))
+		})
+		fmt.Println()
+
+		table("Allocs", func(m Measurement) string {
+			return fmt.Sprintf("%8d", m.Allocs)
+		})
+
+		fmt.Println()
+
+		table("Bytes", func(m Measurement) string {
+			return fmt.Sprintf("%8d", m.Bytes)
+		})
 	}
 }
 
@@ -157,16 +184,16 @@ func main() {
 func shootout(r io.Reader, w io.Writer, size int, copier contender) float64 {
 	buffer := 12 * 1024 * 1024
 
-	start := time.Now()
+	c := NewCheckpoint()
 	if n, err := copier.Copy(w, r, buffer); int(n) != size || err != nil {
 		fmt.Printf("%15s: operation failed: have n %d, want n %d, err %v.\n", copier.Name, n, size, err)
 		return -1
 	}
-	elapsed := time.Since(start)
-	throughput := float64(size) / (1024 * 1024) / elapsed.Seconds()
-	fmt.Printf("%15s: %14v %10f mbps.\n", copier.Name, elapsed, throughput)
+	m := c.Measure()
 
-	return throughput
+	fmt.Printf("%15s: %14v %10f mbps %5d allocs %8d B\n", copier.Name, m.Duration, m.Throughput(size), m.Allocs, m.Bytes)
+
+	return m.Throughput(size)
 }
 
 // StableInput creates a 10MBps data source streaming stably in small chunks of
