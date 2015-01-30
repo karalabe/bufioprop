@@ -38,7 +38,13 @@ func (c *Checkpoint) update() {
 	c.Time = time.Now()
 }
 
+func (c *Checkpoint) ResetTime() {
+	c.Time = time.Now()
+}
+
 func (c *Checkpoint) Measure() Measurement {
+	runtime.GC() // clean up after yourself
+
 	duration := time.Since(c.Time)
 	runtime.ReadMemStats(&c.temp)
 

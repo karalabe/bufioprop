@@ -17,20 +17,22 @@ func benchmarkLatency(iters int, copier contender) {
 	// Start the copy and push a few values through to initialize internals
 	go copier.Copy(ow, ir, 1024)
 
+	c := NewCheckpoint()
 	input, output := []byte{0xff}, make([]byte, 1)
 	for i := 0; i < iters; i++ {
 		iw.Write(input)
 		or.Read(output)
 	}
 	// Do the same thing, but time it this time
-	start := time.Now()
+	c.ResetTime()
 	for i := 0; i < iters; i++ {
 		iw.Write(input)
 		or.Read(output)
 	}
 	ow.Close()
+	m := c.Measure()
 
-	fmt.Printf("%15s: latency %v.\n", copier.Name, time.Since(start)/time.Duration(iters))
+	fmt.Printf("%15s: %6v %7d allocs %9d B.\n", copier.Name, m.Duration/time.Duration(iters), m.Allocs, m.Bytes)
 }
 
 // BenchmarkThroughput runs a high throughput copy to see how implementations compete if

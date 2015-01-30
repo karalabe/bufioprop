@@ -136,16 +136,14 @@ func main() {
 		results := make([]Result, 0, len(contenders))
 		for _, copier := range contenders {
 			if _, ok := failed[copier.Name]; !ok {
-				r := benchmarkThroughput(data, buffers, copier)
-				results = append(results, Result{copier.Name, r})
+				res := benchmarkThroughput(data, buffers, copier)
+				results = append(results, Result{copier.Name, res})
 			}
 		}
 
 		type formatter func(m Measurement) string
 		table := func(title string, format formatter) {
 			table := tablewriter.NewWriter(os.Stdout)
-			defer table.Render()
-
 			header := []string{title}
 			for _, buf := range buffers {
 				header = append(header, strconv.Itoa(buf))
@@ -167,14 +165,8 @@ func main() {
 		})
 		fmt.Println()
 
-		table("Allocs", func(m Measurement) string {
-			return fmt.Sprintf("%8d", m.Allocs)
-		})
-
-		fmt.Println()
-
-		table("Bytes", func(m Measurement) string {
-			return fmt.Sprintf("%8d", m.Bytes)
+		table("Allocs/Bytes", func(m Measurement) string {
+			return fmt.Sprintf("(%8d / %8d)", m.Allocs, m.Bytes)
 		})
 	}
 }
@@ -191,7 +183,7 @@ func shootout(r io.Reader, w io.Writer, size int, copier contender) float64 {
 	}
 	m := c.Measure()
 
-	fmt.Printf("%15s: %14v %10f mbps %5d allocs %8d B\n", copier.Name, m.Duration, m.Throughput(size), m.Allocs, m.Bytes)
+	fmt.Printf("%15s: %14v %10f mbps %5d allocs %9d B\n", copier.Name, m.Duration, m.Throughput(size), m.Allocs, m.Bytes)
 
 	return m.Throughput(size)
 }
