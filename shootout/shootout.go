@@ -105,71 +105,78 @@ func main() {
 			}
 		}
 	}
-	fmt.Println("------------------------------------------------\n")
+	fmt.Println("------------------------------------------------")
 
 	// Run various benchmarks of the remaining contenders
-	fmt.Println("Latency benchmarks:")
-	for _, copier := range contenders {
-		if _, ok := failed[copier.Name]; !ok {
-			benchmarkLatency(1000000, copier)
-		}
-	}
-	fmt.Printf("\nBenchmarks (%d MB):\n", len(data)/1024/1024)
-
 	data = random(256 * 1024 * 1024)
+	procs := []int{1, 8}
 	buffers := []int{333, 4*1024 + 59, 64*1024 - 177, 1024*1024 - 17, 16*1024*1024 + 85}
 
-	type Result struct {
-		Name    string
-		Results []Measurement
-	}
+	for _, proc := range procs {
+		runtime.GOMAXPROCS(proc)
 
-	results := make([]Result, 0, len(contenders))
-	for _, copier := range contenders {
-		if _, ok := failed[copier.Name]; !ok {
-			r := benchmarkThroughput(data, buffers, copier)
-			results = append(results, Result{copier.Name, r})
-		}
-	}
-
-	type formatter func(m Measurement) string
-	table := func(title string, format formatter) {
-		table := tablewriter.NewWriter(os.Stdout)
-		defer table.Render()
-
-		header := []string{title}
-		for _, buf := range buffers {
-			header = append(header, strconv.Itoa(buf))
-		}
-		table.SetHeader(header)
-		for _, r := range results {
-			// Collect and report the results
-			row := []string{r.Name}
-			for _, res := range r.Results {
-				row = append(row, format(res))
+		fmt.Printf("\nLatency benchmarks (GOMAXPROCS = %d):\n", runtime.GOMAXPROCS(0))
+		for _, copier := range contenders {
+			if _, ok := failed[copier.Name]; !ok {
+				benchmarkLatency(1000000, copier)
 			}
-			table.Append(row)
 		}
-		table.Render()
 	}
 
-	fmt.Println()
+	for _, proc := range procs {
+		runtime.GOMAXPROCS(proc)
 
-	table("Throughput", func(m Measurement) string {
-		return fmt.Sprintf("%5.2f", m.Throughput(len(data)))
-	})
+		fmt.Printf("\nThroughput (GOMAXPROCS = %d) (%d MB):\n", proc, len(data)/1024/1024)
 
-	fmt.Println()
+		type Result struct {
+			Name    string
+			Results []Measurement
+		}
 
-	table("Allocs", func(m Measurement) string {
-		return fmt.Sprintf("%8d", m.Allocs)
-	})
+		results := make([]Result, 0, len(contenders))
+		for _, copier := range contenders {
+			if _, ok := failed[copier.Name]; !ok {
+				r := benchmarkThroughput(data, buffers, copier)
+				results = append(results, Result{copier.Name, r})
+			}
+		}
 
-	fmt.Println()
+		type formatter func(m Measurement) string
+		table := func(title string, format formatter) {
+			table := tablewriter.NewWriter(os.Stdout)
+			defer table.Render()
 
-	table("Bytes", func(m Measurement) string {
-		return fmt.Sprintf("%8d", m.Bytes)
-	})
+			header := []string{title}
+			for _, buf := range buffers {
+				header = append(header, strconv.Itoa(buf))
+			}
+			table.SetHeader(header)
+			for _, r := range results {
+				row := []string{r.Name}
+				for _, res := range r.Results {
+					row = append(row, format(res))
+				}
+				table.Append(row)
+			}
+			table.Render()
+		}
+
+		fmt.Println()
+		table("Throughput", func(m Measurement) string {
+			return fmt.Sprintf("%5.2f", m.Throughput(len(data)))
+		})
+		fmt.Println()
+
+		table("Allocs", func(m Measurement) string {
+			return fmt.Sprintf("%8d", m.Allocs)
+		})
+
+		fmt.Println()
+
+		table("Bytes", func(m Measurement) string {
+			return fmt.Sprintf("%8d", m.Bytes)
+		})
+	}
 }
 
 // Shootout runs a copy operation on the given input/output endpoints with the
