@@ -105,22 +105,27 @@ func main() {
 			}
 		}
 	}
-	fmt.Println("------------------------------------------------\n")
+	fmt.Println("------------------------------------------------")
 
 	// Run various benchmarks of the remaining contenders
-	fmt.Println("Latency benchmarks:")
-	for _, copier := range contenders {
-		if _, ok := failed[copier.Name]; !ok {
-			benchmarkLatency(1000000, copier)
-		}
-	}
-
 	data = random(256 * 1024 * 1024)
 	procs := []int{1, 8}
 	buffers := []int{333, 4*1024 + 59, 64*1024 - 177, 1024*1024 - 17, 16*1024*1024 + 85}
 
 	for _, proc := range procs {
 		runtime.GOMAXPROCS(proc)
+
+		fmt.Printf("\nLatency benchmarks (GOMAXPROCS = %d):\n", runtime.GOMAXPROCS(0))
+		for _, copier := range contenders {
+			if _, ok := failed[copier.Name]; !ok {
+				benchmarkLatency(1000000, copier)
+			}
+		}
+	}
+
+	for _, proc := range procs {
+		runtime.GOMAXPROCS(proc)
+
 		fmt.Printf("\nThroughput benchmarks (GOMAXPROCS = %d):\n", runtime.GOMAXPROCS(0))
 
 		table := tablewriter.NewWriter(os.Stdout)
