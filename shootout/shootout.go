@@ -114,32 +114,62 @@ func main() {
 			benchmarkLatency(1024, copier)
 		}
 	}
-	fmt.Printf("\nThroughput benchmarks (%d MB):\n", len(data)/1024/1024)
+	fmt.Printf("\nBenchmarks (%d MB):\n", len(data)/1024/1024)
 
 	data = random(256 * 1024 * 1024)
 	buffers := []int{333, 4*1024 + 59, 64*1024 - 177, 1024*1024 - 17, 16*1024*1024 + 85}
 
-	table := tablewriter.NewWriter(os.Stdout)
-	header := []string{"Solution"}
-	for _, buf := range buffers {
-		header = append(header, "Buf-"+strconv.Itoa(buf))
+	type Result struct {
+		Name    string
+		Results []Measurement
 	}
-	table.SetHeader(header)
 
+	results := make([]Result, 0, len(contenders))
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
-			// Run the benchmark
-			results := benchmarkThroughput(data, buffers, copier)
+			r := benchmarkThroughput(data, buffers, copier)
+			results = append(results, Result{copier.Name, r})
+		}
+	}
 
+	type formatter func(m Measurement) string
+	table := func(title string, format formatter) {
+		table := tablewriter.NewWriter(os.Stdout)
+		defer table.Render()
+
+		header := []string{title}
+		for _, buf := range buffers {
+			header = append(header, "Buf-"+strconv.Itoa(buf))
+		}
+		table.SetHeader(header)
+		for _, r := range results {
 			// Collect and report the results
-			row := []string{copier.Name}
-			for _, res := range results {
-				row = append(row, fmt.Sprintf("%.2f mbps", res))
+			row := []string{r.Name}
+			for _, res := range r.Results {
+				row = append(row, format(res))
 			}
 			table.Append(row)
 		}
+		table.Render()
 	}
-	table.Render()
+
+	fmt.Println()
+
+	table("Throughput", func(m Measurement) string {
+		return fmt.Sprintf("%5.2f mbps", m.Throughput(len(data)))
+	})
+
+	fmt.Println()
+
+	table("Allocs", func(m Measurement) string {
+		return fmt.Sprintf("%8d", m.Allocs)
+	})
+
+	fmt.Println()
+
+	table("Bytes", func(m Measurement) string {
+		return fmt.Sprintf("%8d", m.Bytes)
+	})
 }
 
 // Shootout runs a copy operation on the given input/output endpoints with the
@@ -147,16 +177,16 @@ func main() {
 func shootout(r io.Reader, w io.Writer, size int, copier contender) float64 {
 	buffer := 1024 * 1024
 
-	start := time.Now()
+	c := NewCheckpoint()
 	if n, err := copier.Copy(w, r, buffer); int(n) != size || err != nil {
 		fmt.Printf("%15s: operation failed: have n %d, want n %d, err %v.\n", copier.Name, n, size, err)
 		return -1
 	}
-	elapsed := time.Since(start)
-	throughput := float64(size) / (1024 * 1024) / elapsed.Seconds()
-	fmt.Printf("%15s: %14v %10f mbps.\n", copier.Name, elapsed, throughput)
+	m := c.Measure()
 
-	return throughput
+	fmt.Printf("%15s: %14v %10f mbps %5d allocs %8d B\n", copier.Name, m.Duration, m.Throughput(size), m.Allocs, m.Bytes)
+
+	return m.Throughput(size)
 }
 
 // StableInput creates a 10MBps data source streaming stably in small chunks of

@@ -54,12 +54,12 @@ func (p process) unwait() {
 	}
 }
 
-func chunk(a []byte) []byte {
+func maxsize(a []byte) int {
 	const maxchunk = 8 << 10
 	if len(a) > maxchunk {
-		return a[:maxchunk]
+		return maxchunk
 	}
-	return a
+	return len(a)
 }
 
 func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
@@ -78,6 +78,8 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 	go func() {
 		defer r.exit()
 
+		var next []byte
+
 		h := atomic.LoadInt32(&high)
 		for rerr == nil && !w.exited() {
 			l := atomic.LoadInt32(&low)
@@ -90,7 +92,6 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 				l = atomic.LoadInt32(&low)
 			}
 
-			var next []byte
 			switch {
 			case l == 0:
 				next = buf[h : len(buf)-1]
@@ -102,7 +103,7 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 
 			var nr int
 			for len(next) > 0 && rerr == nil && !w.exited() {
-				nr, rerr = src.Read(chunk(next))
+				nr, rerr = src.Read(next[:maxsize(next)])
 				next = next[nr:]
 				h = (h + int32(nr)) % buflen
 				atomic.StoreInt32(&high, h)
@@ -114,6 +115,7 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 	go func() {
 		defer w.exit()
 
+		var next []byte
 		l := atomic.LoadInt32(&low)
 		for werr == nil {
 			h := atomic.LoadInt32(&high)
@@ -126,7 +128,6 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 				}
 			}
 
-			var next []byte
 			if l < h {
 				next = buf[l:h]
 			} else if h <= l {
