@@ -1,8 +1,9 @@
 package rogerpeppe
 
 import (
-	"github.com/karalabe/bufioprop/shootout/bufpipe"
 	"io"
+
+	"github.com/karalabe/bufioprop/shootout/rogerpeppe/bufpipe"
 )
 
 func Copy(w io.Writer, r io.Reader, ignored int) (int64, error) {

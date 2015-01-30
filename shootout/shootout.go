@@ -12,7 +12,6 @@ import (
 
 	"github.com/karalabe/bufioprop"
 	"github.com/karalabe/bufioprop/shootout/egonelbre"
-	"github.com/karalabe/bufioprop/shootout/jnml"
 	"github.com/karalabe/bufioprop/shootout/mattharden"
 	"github.com/karalabe/bufioprop/shootout/ncw"
 	"github.com/karalabe/bufioprop/shootout/rogerpeppe"
@@ -40,7 +39,7 @@ var contenders = []contender{
 	{"mattharden.Copy", mattharden.Copy},
 	{"yiyus.Copy", yiyus.Copy},
 	{"egonelbre.Copy", egonelbre.Copy},
-	{"jnml.Copy", jnml.Copy},
+	// {"jnml.Copy", jnml.Copy}, panicking currently
 	{"ncw.Copy", ncw.Copy},
 }
 
