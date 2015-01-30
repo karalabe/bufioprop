@@ -9,8 +9,8 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 	if buffer < page {
 		page = buffer
 	}
-	w := make(chan []byte, 1000)
-	r := make(chan interface{}, 1000)
+	w := make(chan []byte, buffer/page+2)
+	r := make(chan interface{}, buffer/page+2)
 	go func() {
 		for chunk := range w {
 			c0 := chunk
