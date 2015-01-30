@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/karalabe/bufioprop"
+	"github.com/karalabe/bufioprop/shootout/bakulshah"
 	"github.com/karalabe/bufioprop/shootout/egonelbre"
 	"github.com/karalabe/bufioprop/shootout/mattharden"
 	"github.com/karalabe/bufioprop/shootout/ncw"
@@ -41,6 +42,7 @@ var contenders = []contender{
 	{"egonelbre.Copy", egonelbre.Copy},
 	// {"jnml.Copy", jnml.Copy}, panicking currently
 	{"ncw.Copy", ncw.Copy},
+	{"bakulshah.Copy", bakulshah.Copy},
 }
 
 func main() {
@@ -71,7 +73,7 @@ func main() {
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
 			in, out := stableInput(data), stableOutput()
-			if res := shootout(in, out, len(data), copier); res < 10 {
+			if res := shootout(in, out, len(data), copier); res < 9 {
 				failed[copier.Name] = struct{}{}
 			}
 		}
@@ -80,7 +82,7 @@ func main() {
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
 			in, out := stableInput(data), burstyOutput()
-			if res := shootout(in, out, len(data), copier); res < 10 {
+			if res := shootout(in, out, len(data), copier); res < 9 {
 				failed[copier.Name] = struct{}{}
 			}
 		}
@@ -89,7 +91,7 @@ func main() {
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
 			in, out := burstyInput(data), stableOutput()
-			if res := shootout(in, out, len(data), copier); res < 10 {
+			if res := shootout(in, out, len(data), copier); res < 9 {
 				failed[copier.Name] = struct{}{}
 			}
 		}
@@ -125,7 +127,7 @@ func shootout(r io.Reader, w io.Writer, size int, copier contender) float64 {
 		return -1
 	}
 	elapsed := time.Since(start)
-	throughput := float64(size) / (1024 * 1024) / float64(elapsed/time.Second)
+	throughput := float64(size) / (1024 * 1024) / elapsed.Seconds()
 	fmt.Printf("%15s: %14v %10f mbps.\n", copier.Name, elapsed, throughput)
 
 	return throughput
