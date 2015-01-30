@@ -1,8 +1,6 @@
 package jnml
 
-import (
-	"io"
-)
+import "io"
 
 func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 	type t struct {
@@ -21,7 +19,7 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 			for len(chunk) != 0 {
 				n, err := dst.Write(chunk)
 				if err != nil {
-					r <- t{err:err}
+					r <- t{err: err}
 					return
 				}
 				chunk = chunk[n:]
@@ -30,45 +28,36 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 		}
 		r <- t{}
 	}()
-	var nn int64
-	pages := [][]byte{make([]byte, page)}
-	for {
-		var b []byte
-		switch n := len(pages); n {
-		case 0:
-			b = make([]byte, page)
-		default:
-			b = pages[n-1]
-			pages[n-1] = nil
-			pages = pages[:n-1]
-		}
+	pages := make([][]byte, buffer/page)
+	buf := make([]byte, buffer)
+	for i := range pages {
+		pages[i] = buf[i*page : i*page+page]
+	}
+	for nn := int64(0); ; {
+		b := pages[len(pages)-1]
+		pages = pages[:len(pages)-1]
 		n, err := src.Read(b)
 		if n != 0 {
 			nn += int64(n)
 			w <- b[:n]
 			buffer -= page
 		}
+		var x t
 		if err != nil {
 			close(w)
-			if err == io.EOF {
-				for {
-					x := <-r
-					if x.b != nil {
-						continue
-					}
-					return nn, x.err
-				}
+			if err != io.EOF {
+				return nn, err
 			}
-			return nn, err
-		}
-		for buffer < page {
-			x := <-r
-			if b = x.b; b != nil {
-				buffer += page
-				pages = append(pages, b)
-				break
+			for x = <-r; x.b != nil; x = <-r {
 			}
 			return nn, x.err
+		}
+		for buffer < page {
+			if x = <-r; x.b == nil {
+				return nn, x.err
+			}
+			buffer += page
+			pages = append(pages, b)
 		}
 	}
 }
