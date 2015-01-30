@@ -18,7 +18,7 @@ import (
 // Internally, one goroutine is reading the src, moving the data into an internal
 // buffer, and another moving from the buffer to the writer. This permits both
 // endpoints to run simultaneously, without one blocking the other.
-func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
+func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, failure error) {
 	buf := make([]byte, buffer)
 	size := int32(buffer) // Total size of the buffer (same as buffer arg, just cast)
 	free := int32(buffer) // Currently available space in the buffer
@@ -38,6 +38,10 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 	go func() {
 		defer close(inQuit)
 
+		var (
+			err error
+			nr  int
+		)
 		for {
 			safeFree := atomic.LoadInt32(&free)
 
@@ -56,20 +60,17 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 				}
 			}
 			// Try to fill the buffer either till the reader position, or the end
-			nr := 0
-			var er error
-
 			if inPos+safeFree <= size { // reader in front of writer
-				nr, er = src.Read(buf[inPos : inPos+safeFree])
+				nr, err = src.Read(buf[inPos : inPos+safeFree])
 			} else {
-				nr, er = src.Read(buf[inPos:])
+				nr, err = src.Read(buf[inPos:])
 			}
 			// Handle any reader errors
-			if er == io.EOF {
+			if err == io.EOF {
 				break
 			}
-			if er != nil {
-				err = er
+			if err != nil {
+				failure = err
 				return
 			}
 			// Update the write pointer and space availability
@@ -91,6 +92,11 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 	go func() {
 		defer close(outQuit)
 
+		var (
+			nw     int
+			expect int32
+			err    error
+		)
 		for {
 			safeFree := atomic.LoadInt32(&free)
 
@@ -114,21 +120,18 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 				}
 			}
 			// Write a batch of data
-			nw, expect := 0, int32(0)
-			var we error
-
 			if outPos-safeFree <= 0 { // writer is in front of reader
 				expect = size - safeFree
-				nw, we = dst.Write(buf[outPos : outPos+expect])
+				nw, err = dst.Write(buf[outPos : outPos+expect])
 			} else {
 				expect = size - outPos
-				nw, we = dst.Write(buf[outPos:])
+				nw, err = dst.Write(buf[outPos:])
 			}
 			written += int64(nw)
 
 			// Update the counters and check for errors
-			if we != nil {
-				err = we
+			if err != nil {
+				failure = err
 				return
 			}
 			if int32(nw) != expect {
