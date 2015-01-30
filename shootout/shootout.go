@@ -82,7 +82,7 @@ func main() {
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
 			in, out := stableInput(data), stableOutput()
-			if res := shootout(in, out, len(data), copier); res < 9 {
+			if res := shootout(in, out, len(data), copier); res < 8 {
 				failed[copier.Name] = struct{}{}
 			}
 		}
@@ -91,7 +91,7 @@ func main() {
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
 			in, out := stableInput(data), burstyOutput()
-			if res := shootout(in, out, len(data), copier); res < 9 {
+			if res := shootout(in, out, len(data), copier); res < 8 {
 				failed[copier.Name] = struct{}{}
 			}
 		}
@@ -100,7 +100,7 @@ func main() {
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
 			in, out := burstyInput(data), stableOutput()
-			if res := shootout(in, out, len(data), copier); res < 9 {
+			if res := shootout(in, out, len(data), copier); res < 8 {
 				failed[copier.Name] = struct{}{}
 			}
 		}
@@ -145,7 +145,7 @@ func main() {
 // Shootout runs a copy operation on the given input/output endpoints with the
 // specified copy function.
 func shootout(r io.Reader, w io.Writer, size int, copier contender) float64 {
-	buffer := 1024 * 1024
+	buffer := 12 * 1024 * 1024
 
 	start := time.Now()
 	if n, err := copier.Copy(w, r, buffer); int(n) != size || err != nil {
@@ -162,23 +162,23 @@ func shootout(r io.Reader, w io.Writer, size int, copier contender) float64 {
 // StableInput creates a 10MBps data source streaming stably in small chunks of
 // 100KB each.
 func stableInput(data []byte) io.Reader {
-	return input(10*time.Millisecond, 100*1024, data)
+	return input(100*time.Millisecond, 1024*1024, data)
 }
 
-// BurstyInput creates a 10MBps data source streaming in bursts of 1MB.
+// BurstyInput creates a 10MBps data source streaming in bursts of 10MB.
 func burstyInput(data []byte) io.Reader {
-	return input(100*time.Millisecond, 1000*1024, data)
+	return input(1000*time.Millisecond, 10*1024*1024, data)
 }
 
 // StableOutput creates a 10MBps data sink consuming stably in small chunks of
 // 100KB each.
 func stableOutput() io.Writer {
-	return output(10*time.Millisecond, 100*1024)
+	return output(100*time.Millisecond, 1024*1024)
 }
 
-// BurstyOutput creates a 10MBps data sink consuming in bursts of 1MB.
+// BurstyOutput creates a 10MBps data sink consuming in bursts of 10MB.
 func burstyOutput() io.Writer {
-	return output(100*time.Millisecond, 1000*1024)
+	return output(1000*time.Millisecond, 10*1024*1024)
 }
 
 // Input creates an unbuffered data source, filled at the specified rate.
