@@ -2,6 +2,7 @@ package egonelbre
 
 import (
 	"io"
+	"runtime"
 	"sync/atomic"
 )
 
@@ -32,6 +33,12 @@ func (p process) waitchange(other process, expect int32, pv *int32) (exited bool
 	p.sleep <- struct{}{}
 	v := atomic.LoadInt32(pv)
 
+	const maxSpin = 16
+	for i := 0; i < maxSpin && expect == v; i += 1 {
+		runtime.Gosched()
+		v = atomic.LoadInt32(pv)
+	}
+
 	// go to sleep
 	for expect == v {
 		select {
@@ -54,12 +61,12 @@ func (p process) unwait() {
 	}
 }
 
-func maxsize(a []byte) int {
-	const maxchunk = 32 << 10
-	if len(a) > maxchunk {
+func maxsize(a int) int {
+	const maxchunk = 16 << 10
+	if a > maxchunk {
 		return maxchunk
 	}
-	return len(a)
+	return a
 }
 
 func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
@@ -103,7 +110,7 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 
 			var nr int
 			for len(next) > 0 && rerr == nil && !w.exited() {
-				nr, rerr = src.Read(next[:maxsize(next)])
+				nr, rerr = src.Read(next[:maxsize(len(next))])
 				next = next[nr:]
 				h = (h + int32(nr)) % buflen
 				atomic.StoreInt32(&high, h)
@@ -136,8 +143,8 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 
 			var nr int
 			for len(next) > 0 && werr == nil {
-				nr, werr = dst.Write(next[:maxsize(next)])
-				atomic.AddInt64(&written, int64(nr))
+				nr, werr = dst.Write(next[:maxsize(len(next))])
+				written += int64(nr)
 				l = (l + int32(nr)) % buflen
 				atomic.StoreInt32(&low, l)
 				r.unwait()
