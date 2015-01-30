@@ -177,6 +177,8 @@ func main() {
 func shootout(r io.Reader, w io.Writer, size int64, copier contender) float64 {
 	buffer := 12 * 1024 * 1024
 
+	time.Sleep(time.Millisecond) // why do I need this? why do the data source allocs seep into the checkpoint?
+
 	c := NewCheckpoint()
 	if n, err := copier.Copy(w, r, buffer); n != size || err != nil {
 		fmt.Printf("%20s: operation failed: have n %d, want n %d, err %v.\n", copier.Name, n, size, err)
