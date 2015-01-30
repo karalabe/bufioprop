@@ -20,9 +20,8 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 	// Run one copy to push data into the buffered pipe
 	errc := make(chan error)
 	go func() {
-		defer pw.Close()
-
 		_, err := io.Copy(pw, src)
+		pw.Close()
 		errc <- err
 	}()
 	// Run another copy to stream data out into the sink
