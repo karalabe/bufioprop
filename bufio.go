@@ -7,6 +7,22 @@ import (
 	"sync/atomic"
 )
 
+func PipeCopy(w io.Writer, r io.Reader, size int) (int64, error) {
+	pr, pw := Pipe(size)
+	done := make(chan error)
+	go func() {
+		_, err := io.Copy(pw, r)
+		pw.Close()
+		done <- err
+	}()
+	n, err0 := io.Copy(w, pr)
+	err1 := <-done
+	if err0 != nil {
+		return n, err0
+	}
+	return n, err1
+}
+
 // Copy copies from src to dst until either EOF is reached on src or an error
 // occurs. It returns the number of bytes copied and the first error encountered
 // while copying, if any.

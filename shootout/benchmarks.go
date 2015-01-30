@@ -31,21 +31,28 @@ func benchmarkLatency(iters int, copier contender) {
 	ow.Close()
 	m := c.Measure()
 
-	fmt.Printf("%20s: %6v %7d allocs %9d B.\n", copier.Name, m.Duration/time.Duration(iters), m.Allocs, m.Bytes)
+	fmt.Printf("%20s: %7v %7d allocs %9d B.\n", copier.Name, m.Duration/time.Duration(iters), m.Allocs, m.Bytes)
 }
 
 // BenchmarkThroughput runs a high throughput copy to see how implementations compete if
 // not rate limited.
 func benchmarkThroughput(count int64, data []byte, buffers []int, copier contender) (results []Measurement) {
-	// Simulate the benchmark for every buffer size
+	// Simulate the benchmark for every buffer size, keep the best out of three
 	for _, buffer := range buffers {
-		source := dataReader(count, data)
+		var best Measurement
 
-		c := NewCheckpoint()
-		copier.Copy(ioutil.Discard, source, buffer)
-		m := c.Measure()
+		for i := 0; i < 3; i++ {
+			source := dataReader(count, data)
 
-		results = append(results, m)
+			c := NewCheckpoint()
+			copier.Copy(ioutil.Discard, source, buffer)
+			m := c.Measure()
+
+			if i == 0 || m.Duration < best.Duration {
+				best = m
+			}
+		}
+		results = append(results, best)
 	}
 	return results
 }

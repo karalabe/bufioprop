@@ -34,6 +34,7 @@ var contenders = []contender{
 	}, ""},
 	// Second contender is the proposed bufio.Copy (currently at bufioprop.Copy)
 	{"[!] bufio.Copy", bufioprop.Copy, ""},
+	{"[!] bufio.PipeCopy", bufioprop.PipeCopy, ""},
 
 	// Other contenders written by mailing list contributions
 	{"rogerpeppe.Copy", rogerpeppe.Copy, ""},
@@ -77,7 +78,7 @@ func main() {
 	fmt.Println("------------------------------------------------\n")
 
 	// Simulate copying between various types of readers and writers
-	count = int64(32 * 1024 * 1024)
+	count = 32 * 1024 * 1024
 
 	fmt.Println("Stable input, stable output shootout:")
 	for _, copier := range contenders {
