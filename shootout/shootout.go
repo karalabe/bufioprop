@@ -25,25 +25,25 @@ type copyFunc func(dst io.Writer, src io.Reader, buffer int) (int64, error)
 type contender struct {
 	Name    string
 	Copy    copyFunc
-	Disable bool
+	Disable string
 }
 
 var contenders = []contender{
 	// First contender is the build in io.Copy (wrapped in out specific signature)
 	{"io.Copy", func(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 		return io.Copy(dst, src)
-	}, false},
+	}, ""},
 	// Second contender is the proposed bufio.Copy (currently at bufioprop.Copy)
-	{"[!] bufio.Copy", bufioprop.Copy, false},
+	{"[!] bufio.Copy", bufioprop.Copy, ""},
 
 	// Other contenders written by mailing list contributions
-	{"rogerpeppe.Copy", rogerpeppe.Copy, false},
-	{"mattharden.Copy", mattharden.Copy, false},
-	{"yiyus.Copy", yiyus.Copy, false},
-	{"egonelbre.Copy", egonelbre.Copy, false},
-	{"jnml.Copy", jnml.Copy, true},
-	{"ncw.Copy", ncw.Copy, false},
-	{"bakulshah.Copy", bakulshah.Copy, false},
+	{"rogerpeppe.Copy", rogerpeppe.Copy, ""},
+	{"mattharden.Copy", mattharden.Copy, ""},
+	{"yiyus.Copy", yiyus.Copy, ""},
+	{"egonelbre.Copy", egonelbre.Copy, ""},
+	{"jnml.Copy", jnml.Copy, "unrecoverable panic in tests"},
+	{"ncw.Copy", ncw.Copy, "deadlock in latency benchmark"},
+	{"bakulshah.Copy", bakulshah.Copy, ""},
 }
 
 func main() {
@@ -53,13 +53,24 @@ func main() {
 	// Collect the shot out implementations
 	failed := make(map[string]struct{})
 
+	fmt.Println("Manually disabled contenders:")
+	for _, copier := range contenders {
+		if len(copier.Disable) != 0 {
+			fmt.Printf("%15s: %s.\n", copier.Name, copier.Disable)
+			failed[copier.Name] = struct{}{}
+		}
+	}
+	fmt.Println("------------------------------------------------\n")
+
 	// Run a batch of tests to make sure the function works
 	fmt.Println("High throughput tests:")
 
 	data := random(128 * 1024 * 1024)
 	for _, copier := range contenders {
-		if !test(data, copier) {
-			failed[copier.Name] = struct{}{}
+		if _, ok := failed[copier.Name]; !ok {
+			if !test(data, copier) {
+				failed[copier.Name] = struct{}{}
+			}
 		}
 	}
 	fmt.Println("------------------------------------------------\n")
@@ -96,11 +107,16 @@ func main() {
 	}
 	fmt.Println("------------------------------------------------\n")
 
-	// Simulate a non rate-limited, long running benchmark to see the throughput
+	// Run various benchmarks of the remaining contenders
+	fmt.Println("Latency benchmarks:")
+	for _, copier := range contenders {
+		if _, ok := failed[copier.Name]; !ok {
+			benchmarkLatency(1024, copier)
+		}
+	}
+	fmt.Printf("\nThroughput benchmarks (%d MB):\n", len(data)/1024/1024)
+
 	data = random(256 * 1024 * 1024)
-
-	fmt.Printf("High throughput benchmarks (%d MB):\n", len(data)/1024/1024)
-
 	buffers := []int{333, 4*1024 + 59, 64*1024 - 177, 1024*1024 - 17, 16*1024*1024 + 85}
 
 	table := tablewriter.NewWriter(os.Stdout)
@@ -113,12 +129,12 @@ func main() {
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
 			// Run the benchmark
-			results := benchmark(data, buffers, copier)
+			results := benchmarkThroughput(data, buffers, copier)
 
 			// Collect and report the results
 			row := []string{copier.Name}
 			for _, res := range results {
-				row = append(row, res.String())
+				row = append(row, fmt.Sprintf("%.2f mbps", res))
 			}
 			table.Append(row)
 		}
