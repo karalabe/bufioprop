@@ -55,7 +55,7 @@ func (p process) unwait() {
 }
 
 func maxsize(a []byte) int {
-	const maxchunk = 1 << 19 // ~0.5MB
+	const maxchunk = 32 << 10
 	if len(a) > maxchunk {
 		return maxchunk
 	}
@@ -136,7 +136,7 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 
 			var nr int
 			for len(next) > 0 && werr == nil {
-				nr, werr = dst.Write(next)
+				nr, werr = dst.Write(next[:maxsize(next)])
 				atomic.AddInt64(&written, int64(nr))
 				l = (l + int32(nr)) % buflen
 				atomic.StoreInt32(&low, l)
