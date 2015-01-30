@@ -65,6 +65,13 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, failure erro
 			} else {
 				nr, err = src.Read(buf[inPos:])
 			}
+			// Update the write pointer and space availability
+			inPos += int32(nr)
+			if inPos >= size {
+				inPos -= size
+			}
+			atomic.AddInt32(&free, -int32(nr))
+
 			// Handle any reader errors
 			if err == io.EOF {
 				break
@@ -73,13 +80,6 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, failure erro
 				failure = err
 				return
 			}
-			// Update the write pointer and space availability
-			inPos += int32(nr)
-			if inPos >= size {
-				inPos -= size
-			}
-			atomic.AddInt32(&free, -int32(nr))
-
 			// Signal the writer if it's asleep
 			select {
 			case outWake <- struct{}{}:

@@ -31,7 +31,7 @@ func benchmarkLatency(iters int, copier contender) {
 	ow.Close()
 	m := c.Measure()
 
-	fmt.Printf("%15s: %6v %7d allocs %9d B.\n", copier.Name, m.Duration/time.Duration(iters), m.Allocs, m.Bytes)
+	fmt.Printf("%20s: %6v %7d allocs %9d B.\n", copier.Name, m.Duration/time.Duration(iters), m.Allocs, m.Bytes)
 }
 
 // BenchmarkThroughput runs a high throughput copy to see how implementations compete if

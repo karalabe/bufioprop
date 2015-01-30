@@ -56,7 +56,7 @@ func main() {
 	fmt.Println("Manually disabled contenders:")
 	for _, copier := range contenders {
 		if len(copier.Disable) != 0 {
-			fmt.Printf("%15s: %s.\n", copier.Name, copier.Disable)
+			fmt.Printf("%20s: %s.\n", copier.Name, copier.Disable)
 			failed[copier.Name] = struct{}{}
 		}
 	}
@@ -179,12 +179,12 @@ func shootout(r io.Reader, w io.Writer, size int64, copier contender) float64 {
 
 	c := NewCheckpoint()
 	if n, err := copier.Copy(w, r, buffer); n != size || err != nil {
-		fmt.Printf("%15s: operation failed: have n %d, want n %d, err %v.\n", copier.Name, n, size, err)
+		fmt.Printf("%20s: operation failed: have n %d, want n %d, err %v.\n", copier.Name, n, size, err)
 		return -1
 	}
 	m := c.Measure()
 
-	fmt.Printf("%15s: %14v %10f mbps %5d allocs %9d B\n", copier.Name, m.Duration, m.Throughput(size), m.Allocs, m.Bytes)
+	fmt.Printf("%20s: %14v %10f mbps %5d allocs %9d B\n", copier.Name, m.Duration, m.Throughput(size), m.Allocs, m.Bytes)
 
 	return m.Throughput(size)
 }
