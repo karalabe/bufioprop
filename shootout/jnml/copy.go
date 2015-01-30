@@ -5,55 +5,34 @@ import (
 )
 
 func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
-	page := 1 << 12
+	type t struct {
+		err error
+		b   []byte
+	}
+	page := 1 << 20
 	if buffer < page {
 		page = buffer
 	}
 	w := make(chan []byte, buffer/page+2)
-	r := make(chan interface{}, buffer/page+2)
+	r := make(chan t, buffer/page+2)
 	go func() {
 		for chunk := range w {
 			c0 := chunk
 			for len(chunk) != 0 {
 				n, err := dst.Write(chunk)
 				if err != nil {
-					r <- err
+					r <- t{err:err}
 					return
 				}
 				chunk = chunk[n:]
 			}
-			r <- c0[:page]
+			r <- t{b: c0[:page]}
 		}
-		r <- nil
+		r <- t{}
 	}()
 	var nn int64
-	var pages [][]byte
+	pages := [][]byte{make([]byte, page)}
 	for {
-		for buffer < page {
-			select {
-			case x := <-r:
-				switch x := x.(type) {
-				case error:
-					close(w)
-					return nn, x
-				case []byte:
-					buffer += page
-					pages = append(pages, x)
-				}
-			}
-		}
-		select {
-		case x := <-r:
-			switch x := x.(type) {
-			case error:
-				close(w)
-				return nn, x
-			case []byte:
-				buffer += page
-				pages = append(pages, x)
-			}
-		default:
-		}
 		var b []byte
 		switch n := len(pages); n {
 		case 0:
@@ -73,15 +52,23 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 			close(w)
 			if err == io.EOF {
 				for {
-					switch x := (<-r).(type) {
-					case nil:
-						return nn, nil
-					case error:
-						return nn, x
+					x := <-r
+					if x.b != nil {
+						continue
 					}
+					return nn, x.err
 				}
 			}
 			return nn, err
+		}
+		for buffer < page {
+			x := <-r
+			if b = x.b; b != nil {
+				buffer += page
+				pages = append(pages, b)
+				break
+			}
+			return nn, x.err
 		}
 	}
 }
