@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"runtime"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 	"github.com/karalabe/bufioprop"
 	"github.com/karalabe/bufioprop/shootout/bakulshah"
 	"github.com/karalabe/bufioprop/shootout/egonelbre"
+	"github.com/karalabe/bufioprop/shootout/jnml"
 	"github.com/karalabe/bufioprop/shootout/mattharden"
 	"github.com/karalabe/bufioprop/shootout/ncw"
 	"github.com/karalabe/bufioprop/shootout/rogerpeppe"
@@ -23,52 +23,50 @@ import (
 type copyFunc func(dst io.Writer, src io.Reader, buffer int) (int64, error)
 
 type contender struct {
-	Name string
-	Copy copyFunc
+	Name    string
+	Copy    copyFunc
+	Disable bool
 }
 
 var contenders = []contender{
 	// First contender is the build in io.Copy (wrapped in out specific signature)
 	{"io.Copy", func(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 		return io.Copy(dst, src)
-	}},
+	}, false},
 	// Second contender is the proposed bufio.Copy (currently at bufioprop.Copy)
-	{"[!] bufio.Copy", bufioprop.Copy},
+	{"[!] bufio.Copy", bufioprop.Copy, false},
 
 	// Other contenders written by mailing list contributions
-	{"rogerpeppe.Copy", rogerpeppe.Copy},
-	{"mattharden.Copy", mattharden.Copy},
-	{"yiyus.Copy", yiyus.Copy},
-	{"egonelbre.Copy", egonelbre.Copy},
-	// {"jnml.Copy", jnml.Copy}, panicking currently
-	{"ncw.Copy", ncw.Copy},
-	{"bakulshah.Copy", bakulshah.Copy},
+	{"rogerpeppe.Copy", rogerpeppe.Copy, false},
+	{"mattharden.Copy", mattharden.Copy, false},
+	{"yiyus.Copy", yiyus.Copy, false},
+	{"egonelbre.Copy", egonelbre.Copy, false},
+	{"jnml.Copy", jnml.Copy, true},
+	{"ncw.Copy", ncw.Copy, false},
+	{"bakulshah.Copy", bakulshah.Copy, false},
 }
 
 func main() {
 	// Run on multiple threads to catch race bugs
 	runtime.GOMAXPROCS(8)
 
-	// Generate a random data source long enough to discover the issues
-	src := rand.NewSource(0)
-	data := make([]byte, 128*1024*1024)
-	for i := 0; i < len(data); i++ {
-		data[i] = byte(src.Int63() & 0xff)
-	}
+	// Collect the shot out implementations
+	failed := make(map[string]struct{})
+
 	// Run a batch of tests to make sure the function works
 	fmt.Println("High throughput tests:")
-	failed := make(map[string]struct{})
+
+	data := random(128 * 1024 * 1024)
 	for _, copier := range contenders {
 		if !test(data, copier) {
 			failed[copier.Name] = struct{}{}
 		}
 	}
-	fmt.Println("------------------------------------------------")
-
-	// We don't need such a huge blob for the shootout, reduce
-	data = data[:32*1024*1024]
+	fmt.Println("------------------------------------------------\n")
 
 	// Simulate copying between various types of readers and writers
+	data = random(32 * 1024 * 1024)
+
 	fmt.Println("Stable input, stable output shootout:")
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
@@ -96,8 +94,12 @@ func main() {
 			}
 		}
 	}
-	fmt.Println("------------------------------------------------")
-	fmt.Println("High throughput benchmarks:")
+	fmt.Println("------------------------------------------------\n")
+
+	// Simulate a non rate-limited, long running benchmark to see the throughput
+	data = random(256 * 1024 * 1024)
+
+	fmt.Printf("High throughput benchmarks (%d MB):\n", len(data)/1024/1024)
 
 	buffers := []int{333, 4*1024 + 59, 64*1024 - 177, 1024*1024 - 17, 16*1024*1024 + 85}
 
@@ -110,7 +112,15 @@ func main() {
 
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
-			benchmark(data, buffers, copier, table)
+			// Run the benchmark
+			results := benchmark(data, buffers, copier)
+
+			// Collect and report the results
+			row := []string{copier.Name}
+			for _, res := range results {
+				row = append(row, res.String())
+			}
+			table.Append(row)
 		}
 	}
 	table.Render()

@@ -6,8 +6,8 @@ import (
 	"github.com/karalabe/bufioprop/shootout/rogerpeppe/bufpipe"
 )
 
-func Copy(w io.Writer, r io.Reader, ignored int) (int64, error) {
-	pr, pw := bufpipe.New(1024 * 1024)
+func Copy(w io.Writer, r io.Reader, buffer int) (int64, error) {
+	pr, pw := bufpipe.New(buffer)
 	done := make(chan error)
 	go func() {
 		_, err := io.Copy(pw, r)

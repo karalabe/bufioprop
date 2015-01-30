@@ -7,6 +7,11 @@ import (
 
 // Test verifies that an implementation works correctly under high load.
 func test(data []byte, copier contender) (result bool) {
+	// Short circuit if manually disabled (probably an unrecoverable panic)
+	if copier.Disable {
+		fmt.Printf("%15s: unrecoverable panic, disabled.\n", copier.Name)
+		return false
+	}
 	// Make sure a panic doesn't kill the shootout
 	defer func() {
 		if r := recover(); r != nil {
