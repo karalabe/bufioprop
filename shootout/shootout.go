@@ -111,7 +111,7 @@ func main() {
 	fmt.Println("Latency benchmarks:")
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
-			benchmarkLatency(1024, copier)
+			benchmarkLatency(1000000, copier)
 		}
 	}
 	fmt.Printf("\nThroughput benchmarks (%d MB):\n", len(data)/1024/1024)
