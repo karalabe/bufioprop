@@ -34,7 +34,6 @@ var contenders = []contender{
 	}, ""},
 	// Second contender is the proposed bufio.Copy (currently at bufioprop.Copy)
 	{"[!] bufio.Copy", bufioprop.Copy, ""},
-	{"[!] bufio.PipeCopy", bufioprop.PipeCopy, ""},
 
 	// Other contenders written by mailing list contributions
 	{"rogerpeppe.Copy", rogerpeppe.Copy, ""},
