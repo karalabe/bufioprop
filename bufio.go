@@ -31,70 +31,47 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 	go func() {
 		defer close(rq)
 
-		chunk := make([]byte, 32*1024)
 		for {
-			nr, er := src.Read(chunk)
-			if nr > 0 {
-				// Repeat until the chunk is pushed into the buffer
-				left := chunk
-				for {
-					bac := atomic.LoadInt32(&ba)
+			bac := atomic.LoadInt32(&ba)
 
-					// If the buffer is full, wait
-					if bac == 0 {
-						select {
-						case <-rs: // wake signal from writer, retry
-							continue
+			// If the buffer is full, wait
+			if bac == 0 {
+				select {
+				case <-rs: // wake signal from writer, retry
+					continue
 
-						case <-wq: // writer dead, return
-							return
-						}
-					}
-					nw := 0
-					switch {
-					case int(bac) >= nr && wp <= bs-int32(nr): // enough space, no wrapping
-						copy(buf[wp:], left[:nr])
-						nw = nr
-
-					case int(bac) >= nr && wp > bs-int32(nr): // enough space, wrapping
-						copy(buf[wp:], left[:bs-wp])
-						copy(buf, left[bs-wp:nr])
-						nw = nr
-
-					case int(bac) < nr && wp+bac <= bs: // not enough space, no wrapping
-						copy(buf[wp:], left[:bac])
-						nw = int(bac)
-
-					case int(bac) < nr && wp+bac > bs: // not enough space, wrapping
-						copy(buf[wp:], left[:bs-wp])
-						copy(buf, left[bs-wp:bac])
-						nw = int(bac)
-					}
-					// Update the write pointer and space availability
-					wp += int32(nw)
-					if wp >= bs {
-						wp -= bs
-					}
-					atomic.AddInt32(&ba, -int32(nw))
-
-					// Signal the writer if it's asleep
-					select {
-					case ws <- struct{}{}:
-					default:
-					}
-					// If everything was buffered, get the next chunk
-					if nw == nr {
-						break
-					}
-					left, nr = left[nw:], nr-nw
+				case <-wq: // writer dead, return
+					return
 				}
 			}
+			// Try to fill the buffer either till the reader position, or the end
+			nr := 0
+			var er error
+
+			if wp+bac <= bs { // reader in front of writer
+				nr, er = src.Read(buf[wp : wp+bac])
+			} else {
+				nr, er = src.Read(buf[wp:])
+			}
+			// Handle any reader errors
 			if er == io.EOF {
 				break
 			}
 			if er != nil {
 				err = er
 				return
+			}
+			// Update the write pointer and space availability
+			wp += int32(nr)
+			if wp >= bs {
+				wp -= bs
+			}
+			atomic.AddInt32(&ba, -int32(nr))
+
+			// Signal the writer if it's asleep
+			select {
+			case ws <- struct{}{}:
+			default:
 			}
 		}
 	}()
@@ -125,19 +102,14 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (written int64, err error) {
 			nw, nc := 0, int32(0)
 			var we error
 
-			switch {
-			case rp-bac <= 0: // data available, no wrapping
+			if rp-bac <= 0 { // writer is in front of reader
 				nc = bs - bac
 				nw, we = dst.Write(buf[rp : rp+nc])
-
-			case rp-bac > 0: // data available, wrapping
+			} else {
 				nc = bs - rp
 				nw, we = dst.Write(buf[rp:])
 			}
-			// Update the counters and check for errors
-			if nw > 0 {
-				written += int64(nw)
-			}
+			written += int64(nw)
 			if we != nil {
 				err = we
 				return
