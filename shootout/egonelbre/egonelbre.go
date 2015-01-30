@@ -55,7 +55,7 @@ func (p process) unwait() {
 }
 
 func maxsize(a []byte) int {
-	const maxchunk = 8 << 10
+	const maxchunk = 1 << 19 // ~0.5MB
 	if len(a) > maxchunk {
 		return maxchunk
 	}
