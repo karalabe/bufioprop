@@ -1,15 +1,12 @@
 package rogerpeppe
 
 import (
+	"github.com/karalabe/bufioprop/shootout/bufpipe"
 	"io"
-	"os"
 )
 
 func Copy(w io.Writer, r io.Reader, ignored int) (int64, error) {
-	pr, pw, err := os.Pipe()
-	if err != nil {
-		return 0, err
-	}
+	pr, pw := bufpipe.New(1024 * 1024)
 	done := make(chan error)
 	go func() {
 		_, err := io.Copy(pw, r)
