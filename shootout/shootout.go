@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/karalabe/bufioprop"
+	"github.com/karalabe/bufioprop/shootout/augustoroman"
 	"github.com/karalabe/bufioprop/shootout/bakulshah"
 	"github.com/karalabe/bufioprop/shootout/egonelbre"
 	"github.com/karalabe/bufioprop/shootout/jnml"
@@ -44,6 +45,7 @@ var contenders = []contender{
 	{"jnml.Copy", jnml.Copy, ""},
 	{"ncw.Copy", ncw.Copy, "deadlock in latency benchmark"},
 	{"bakulshah.Copy", bakulshah.Copy, ""},
+	{"augustoroman.Copy", augustoroman.Copy, ""},
 }
 
 func main() {
