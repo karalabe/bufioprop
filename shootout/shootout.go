@@ -85,7 +85,7 @@ func main() {
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
 			in, out := stableInput(count, data), stableOutput()
-			if res := shootout(in, out, count, copier); res < 8 {
+			if res := shootout(in, out, count, copier); res < 5.5 {
 				failed[copier.Name] = struct{}{}
 			}
 		}
@@ -94,7 +94,7 @@ func main() {
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
 			in, out := stableInput(count, data), burstyOutput()
-			if res := shootout(in, out, count, copier); res < 8 {
+			if res := shootout(in, out, count, copier); res < 5.5 {
 				failed[copier.Name] = struct{}{}
 			}
 		}
@@ -103,7 +103,7 @@ func main() {
 	for _, copier := range contenders {
 		if _, ok := failed[copier.Name]; !ok {
 			in, out := burstyInput(count, data), stableOutput()
-			if res := shootout(in, out, count, copier); res < 8 {
+			if res := shootout(in, out, count, copier); res < 5.5 {
 				failed[copier.Name] = struct{}{}
 			}
 		}
@@ -196,23 +196,23 @@ func shootout(r io.Reader, w io.Writer, size int64, copier contender) float64 {
 // StableInput creates a 10MBps data source streaming stably in small chunks of
 // 100KB each.
 func stableInput(count int64, data []byte) io.Reader {
-	return input(100*time.Millisecond, 1024*1024, dataReader(count, data))
+	return input(time.Millisecond, 10*1024, dataReader(count, data))
 }
 
 // BurstyInput creates a 10MBps data source streaming in bursts of 10MB.
 func burstyInput(count int64, data []byte) io.Reader {
-	return input(1000*time.Millisecond, 10*1024*1024, dataReader(count, data))
+	return input(time.Second, 10*1000*1024, dataReader(count, data))
 }
 
 // StableOutput creates a 10MBps data sink consuming stably in small chunks of
 // 100KB each.
 func stableOutput() io.Writer {
-	return output(100*time.Millisecond, 1024*1024)
+	return output(time.Millisecond, 10*1024)
 }
 
 // BurstyOutput creates a 10MBps data sink consuming in bursts of 10MB.
 func burstyOutput() io.Writer {
-	return output(1000*time.Millisecond, 10*1024*1024)
+	return output(time.Second, 10*1000*1024)
 }
 
 // Input creates an unbuffered data source, filled at the specified rate
