@@ -177,12 +177,12 @@ func (p *pipe) outputWait() (int32, error) {
 
 // InputAdvance updates the input index, buffer free space counter and signals
 // the output writer (if any) that space is available.
-func (p *pipe) inputAdvance(count int32) {
-	p.inPos += count
+func (p *pipe) inputAdvance(count int) {
+	p.inPos += int32(count)
 	if p.inPos >= p.size {
 		p.inPos -= p.size
 	}
-	atomic.AddInt32(&p.free, -count)
+	atomic.AddInt32(&p.free, -int32(count))
 
 	select {
 	case p.outWake <- struct{}{}:
@@ -192,12 +192,12 @@ func (p *pipe) inputAdvance(count int32) {
 
 // OutputAdvance updates the output index, buffer free space counter and signals
 // the input writer (if any) that space is available.
-func (p *pipe) outputAdvance(count int32) {
-	p.outPos += count
+func (p *pipe) outputAdvance(count int) {
+	p.outPos += int32(count)
 	if p.outPos >= p.size {
 		p.outPos -= p.size
 	}
-	atomic.AddInt32(&p.free, count)
+	atomic.AddInt32(&p.free, int32(count))
 
 	select {
 	case p.inWake <- struct{}{}:
@@ -227,12 +227,11 @@ func (p *pipe) read(b []byte) (int, error) {
 	if limit > p.outPos+int32(len(b)) {
 		limit = p.outPos + int32(len(b))
 	}
-	copy(b, p.buffer[p.outPos:limit])
-	written := limit - p.outPos
+	written := copy(b, p.buffer[p.outPos:limit])
 
 	// Update the pipe output state and return
 	p.outputAdvance(written)
-	return int(written), nil
+	return written, nil
 }
 
 // WriteTo keeps pushing data into the writer until the source is closed or fails.
@@ -262,7 +261,7 @@ func (p *pipe) writeTo(w io.Writer) (written int64, err error) {
 			return written, io.ErrShortWrite
 		}
 		// Update the pipe output state and return
-		p.outputAdvance(int32(nw))
+		p.outputAdvance(nw)
 	}
 }
 
@@ -289,8 +288,7 @@ func (p *pipe) write(b []byte) (read int, failure error) {
 		if limit > p.inPos+int32(len(b)) {
 			limit = p.inPos + int32(len(b))
 		}
-		copy(p.buffer[p.inPos:limit], b[:limit-p.inPos])
-		nr := limit - p.inPos
+		nr := copy(p.buffer[p.inPos:limit], b[:limit-p.inPos])
 		b = b[nr:]
 		read += int(nr)
 
@@ -318,7 +316,7 @@ func (p *pipe) readFrom(r io.Reader) (read int64, failure error) {
 		read += int64(nr)
 
 		// Update the pipe input state and handle any occurred errors
-		p.inputAdvance(int32(nr))
+		p.inputAdvance(nr)
 		if err == io.EOF {
 			return read, nil
 		}
@@ -335,7 +333,7 @@ func (p *pipe) outputClose(err error) {
 	close(p.outQuit)
 }
 
-// InputClose terminates the reader endpoint, notifying and reads after the
+// InputClose terminates the reader endpoint, notifying any reads after the
 // buffer is flushed of it. In case of a nil close, EOF is returned.
 func (p *pipe) inputClose(err error) {
 	if err == nil {
