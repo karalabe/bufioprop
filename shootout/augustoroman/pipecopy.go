@@ -6,7 +6,16 @@ import (
 )
 
 func Copy(dst io.Writer, src io.Reader, bufferSize int) (int64, error) {
-	pipe := NewBufferedPipe(make([]byte, bufferSize))
+	return CopyWithBuf(dst, src, make([]byte, bufferSize))
+}
+
+// Uses the provided buffer to copy src to dst.  Passing a zero-length buffer
+// (e.g. nil) will perform an unbuffered copy.
+func CopyWithBuf(dst io.Writer, src io.Reader, buffer []byte) (int64, error) {
+	if len(buffer) == 0 {
+		return io.Copy(dst, src) // unbuffered copy
+	}
+	pipe := NewBufferedPipe(buffer)
 	errs := make(chan error, 1)
 	go func() {
 		_, err := pipe.ReadFrom(src)
@@ -31,6 +40,7 @@ type BufferedPipe struct {
 	buffersAvailable sync.Cond
 }
 
+// Providing a zero-length buffer will result in an inoperable pipe.
 func NewBufferedPipe(buf []byte) *BufferedPipe {
 	b := BufferedPipe{Buf: buf}
 	b.dataReady.L = &b.mutex
