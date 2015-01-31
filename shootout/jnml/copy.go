@@ -101,14 +101,9 @@ func Copy(dst io.Writer, src io.Reader, buffer int) (int64, error) {
 				w <- q
 			}
 			close(w)
-			for {
-				switch n = <-r; n {
-				case -1:
-					return nn, werr
-				case 0:
-					return nn, nil
-				}
+			for n = <-r; n > 0; n = <-r {
 			}
+			return nn, werr
 		}
 	}
 }
