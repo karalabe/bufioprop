@@ -10,15 +10,21 @@ type sema struct {
 	s  int
 }
 
+func (s *sema) Init(size int) {
+	s.c.L = &s.mu
+	s.s = size
+}
+
 // Add pushes the semaphore up by n
 func (s *sema) Add(n int) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-        if s.c.L == nil {
-            s.c.L = &s.mu
-        }
-	s.s += n
-	s.c.Broadcast()
+	if s.s == 0 {
+		s.s += n
+		s.c.Broadcast()
+	} else {
+		s.s += n
+	}
+	s.mu.Unlock()
 	return
 }
 
@@ -26,16 +32,16 @@ func (s *sema) Add(n int) {
 // It waits until it can return some number greater than zero.
 func (s *sema) Sub(n int) int {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-        if s.c.L == nil {
-            s.c.L = &s.mu
-        }
-        for s.s == 0 {
-                s.c.Wait()
-        }
-        if n > s.s {
-            n = s.s
-        }
-        s.s -= n
-        return n
+	if s.c.L == nil {
+		s.c.L = &s.mu
+	}
+	for s.s == 0 {
+		s.c.Wait()
+	}
+	if n > s.s {
+		n = s.s
+	}
+	s.s -= n
+	s.mu.Unlock()
+	return n
 }
