@@ -7,6 +7,9 @@ import (
 	"testing"
 )
 
+// Big random test data.
+var testData = random(128 * 1024 * 1024)
+
 // Random generates a pseudo-random binary blob.
 func random(length int) []byte {
 	src := rand.NewSource(0)
@@ -18,57 +21,73 @@ func random(length int) []byte {
 	return data
 }
 
-// Tests that a simple copy works
-func TestCopy(t *testing.T) {
-	data := random(128 * 1024 * 1024)
+// Tests of various buffer sizes to catch index errors.
+func TestCopyBuffer3333B(t *testing.T) {
+	testCopy(3333, t)
+}
 
-	rb := bytes.NewBuffer(data)
+func TestCopyBuffer33333B(t *testing.T) {
+	testCopy(33333, t)
+}
+
+func TestCopyBuffer333333B(t *testing.T) {
+	testCopy(333333, t)
+}
+
+// Tests that a simple copy works
+func testCopy(buffer int, t *testing.T) {
+	rb := bytes.NewBuffer(testData)
 	wb := new(bytes.Buffer)
 
-	if n, err := Copy(wb, rb, 333333); err != nil { // weird buffer size to catch index bugs
+	if n, err := Copy(wb, rb, buffer); err != nil { // weird buffer size to catch index bugs
 		t.Fatalf("failed to copy data: %v.", err)
-	} else if int(n) != len(data) {
-		t.Fatalf("data length mismatch: have %d, want %d.", n, len(data))
+	} else if int(n) != len(testData) {
+		t.Fatalf("data length mismatch: have %d, want %d.", n, len(testData))
 	}
-	if bytes.Compare(data, wb.Bytes()) != 0 {
+	if bytes.Compare(testData, wb.Bytes()) != 0 {
 		t.Errorf("copy did not work properly.")
+		for i := 0; i < len(testData); i++ {
+			if testData[i] != wb.Bytes()[i] {
+				t.Fatalf("first mismatch at %d: want 0x%02x, have 0x%02x.", i, testData[i], wb.Bytes()[i])
+			}
+		}
 	}
 }
 
 // Various combinations of benchmarks to measure the copy.
-func BenchmarkCopy1KbData1KbBuffer(b *testing.B) {
+func BenchmarkCopy1KbData1KbBuf(b *testing.B) {
 	benchmarkCopy(1024, 1024, b)
 }
 
-func BenchmarkCopy1KbData128KbBuffer(b *testing.B) {
+func BenchmarkCopy1KbData128KbBuf(b *testing.B) {
 	benchmarkCopy(1024, 128*1024, b)
 }
 
-func BenchmarkCopy1KbData1MbBuffer(b *testing.B) {
+func BenchmarkCopy1KbData1MbBuf(b *testing.B) {
 	benchmarkCopy(1024, 1024*1024, b)
 }
 
-func BenchmarkCopy1MbData1KbBuffer(b *testing.B) {
+func BenchmarkCopy1MbData1KbBuf(b *testing.B) {
 	benchmarkCopy(1024*1024, 1024, b)
 }
 
-func BenchmarkCopy1MbData128KbBuffer(b *testing.B) {
+func BenchmarkCopy1MbData128KbBuf(b *testing.B) {
 	benchmarkCopy(1024*1024, 128*1024, b)
 }
 
-func BenchmarkCopy1MbData1MbBuffer(b *testing.B) {
+func BenchmarkCopy1MbData1MbBuf(b *testing.B) {
 	benchmarkCopy(1024*1024, 1024*1024, b)
 }
 
-func BenchmarkCopy128MbData1KbBuffer(b *testing.B) {
+func BenchmarkCopy128MbData1KbBuf(b *testing.B) {
 	benchmarkCopy(128*1024*1024, 1024, b)
 }
 
-func BenchmarkCopy128MbData128KbBuffer(b *testing.B) {
+func BenchmarkCopy128MbData128KbBuf(b *testing.B) {
 	benchmarkCopy(128*1024*1024, 128*1024, b)
 }
 
-func BenchmarkCopy128MbData1MbBuffer(b *testing.B) {
+func BenchmarkCopy128MbData1MbBuf(b *testing.B) {
 	benchmarkCopy(128*1024*1024, 1024*1024, b)
 }
 
