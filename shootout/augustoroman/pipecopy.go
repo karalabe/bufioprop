@@ -5,31 +5,40 @@ import (
 	"sync"
 )
 
+// Pipe returns a buffered pipe that uses the provided byte array as a data
+// buffer. Providing a zero-length buffer will result in an inoperable pipe.
+func Pipe(buf []byte) (Reader, Writer) {
+	p := &pipe{Buf: buf}
+	p.dataReady.L = &p.mutex
+	p.buffersAvailable.L = &p.mutex
+	return Reader{p}, Writer{p}
+}
+
 func Copy(dst io.Writer, src io.Reader, bufferSize int) (int64, error) {
-	return CopyWithBuf(dst, src, make([]byte, bufferSize))
+	return CopyWithBuffer(dst, src, make([]byte, bufferSize))
 }
 
 // Uses the provided buffer to copy src to dst.  Passing a zero-length buffer
 // (e.g. nil) will perform an unbuffered copy.
-func CopyWithBuf(dst io.Writer, src io.Reader, buffer []byte) (int64, error) {
+func CopyWithBuffer(dst io.Writer, src io.Reader, buffer []byte) (int64, error) {
 	if len(buffer) == 0 {
 		return io.Copy(dst, src) // unbuffered copy
 	}
-	pipe := NewBufferedPipe(buffer)
+	pr, pw := Pipe(buffer)
 	errs := make(chan error, 1)
 	go func() {
-		_, err := pipe.ReadFrom(src)
+		_, err := io.Copy(pw, src)
 		if err != nil {
 			errs <- err
 		}
-		pipe.Close()
+		pw.close()
 	}()
-	n, err := pipe.WriteTo(dst)
+	n, err := io.Copy(dst, pr)
 	errs <- err
 	return n, <-errs // Return first error that came up.
 }
 
-type BufferedPipe struct {
+type pipe struct {
 	Buf []byte
 
 	mutex            sync.Mutex
@@ -40,15 +49,17 @@ type BufferedPipe struct {
 	buffersAvailable sync.Cond
 }
 
-// Providing a zero-length buffer will result in an inoperable pipe.
-func NewBufferedPipe(buf []byte) *BufferedPipe {
-	b := BufferedPipe{Buf: buf}
-	b.dataReady.L = &b.mutex
-	b.buffersAvailable.L = &b.mutex
-	return &b
-}
+type Reader struct{ *pipe }
+type Writer struct{ *pipe }
 
-func (b *BufferedPipe) Close() error {
+func (r Reader) Read(buf []byte) (n int, err error)        { return r.pipe.read(buf) }
+func (r Reader) WriteTo(w io.Writer) (n int64, err error)  { return r.pipe.writeTo(w) }
+func (r Reader) Close() error                              { return r.pipe.close() }
+func (w Writer) Write(data []byte) (n int, err error)      { return w.pipe.write(data) }
+func (w Writer) ReadFrom(r io.Reader) (n int64, err error) { return w.pipe.readFrom(r) }
+func (w Writer) Close() error                              { return w.pipe.close() }
+
+func (b *pipe) close() error {
 	b.mutex.Lock()
 	ret := b.err
 	if b.err == nil || b.err == io.EOF {
@@ -61,7 +72,7 @@ func (b *BufferedPipe) Close() error {
 	return ret
 }
 
-func (b *BufferedPipe) Write(p []byte) (n int, err error) {
+func (b *pipe) write(p []byte) (n int, err error) {
 	N := len(p)
 	for n < N && err == nil {
 		var chunk1, chunk2 []byte
@@ -76,7 +87,7 @@ func (b *BufferedPipe) Write(p []byte) (n int, err error) {
 	return n, err
 }
 
-func (b *BufferedPipe) Read(p []byte) (n int, err error) {
+func (b *pipe) read(p []byte) (n int, err error) {
 	data1, data2, err := b.getDataChunks()
 	n = copy(p, data1)
 	if n == len(data1) && n < len(p) {
@@ -86,7 +97,7 @@ func (b *BufferedPipe) Read(p []byte) (n int, err error) {
 	return n, err
 }
 
-func (b *BufferedPipe) ReadFrom(r io.Reader) (n int64, err error) {
+func (b *pipe) readFrom(r io.Reader) (n int64, err error) {
 	var chunk1, chunk2 []byte
 all:
 	for {
@@ -119,7 +130,7 @@ all:
 	return int64(n), err
 }
 
-func (b *BufferedPipe) WriteTo(w io.Writer) (n int64, err error) {
+func (b *pipe) writeTo(w io.Writer) (n int64, err error) {
 	var data1, data2 []byte
 all:
 	for {
@@ -152,7 +163,7 @@ all:
 	return n, err
 }
 
-func (b *BufferedPipe) getDataChunks() (data1, data2 []byte, err error) {
+func (b *pipe) getDataChunks() (data1, data2 []byte, err error) {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 	for {
@@ -177,7 +188,7 @@ func (b *BufferedPipe) getDataChunks() (data1, data2 []byte, err error) {
 	}
 }
 
-func (b *BufferedPipe) getEmptyChunks() (chunk1, chunk2 []byte, err error) {
+func (b *pipe) getEmptyChunks() (chunk1, chunk2 []byte, err error) {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 	for {
@@ -202,7 +213,7 @@ func (b *BufferedPipe) getEmptyChunks() (chunk1, chunk2 []byte, err error) {
 	}
 }
 
-func (b *BufferedPipe) commitWrite(nn int, err error) {
+func (b *pipe) commitWrite(nn int, err error) {
 	b.mutex.Lock()
 	if b.err == nil {
 		b.err = err
@@ -212,7 +223,7 @@ func (b *BufferedPipe) commitWrite(nn int, err error) {
 	b.dataReady.Signal()
 }
 
-func (b *BufferedPipe) commitRead(n int, err error) {
+func (b *pipe) commitRead(n int, err error) {
 	b.mutex.Lock()
 	if b.err == nil {
 		b.err = err
