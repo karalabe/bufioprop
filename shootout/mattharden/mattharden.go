@@ -1,47 +1,41 @@
 package mattharden
 
 import (
-	"bufio"
 	"io"
 )
 
-func Copy(w io.Writer, r io.Reader, buflen int) (int64, error) {
-	return bufcopy(w, r, buflen/16, 16)
+type limitedBuf struct {
+        s sema
+	r io.Reader
+        w io.WriteCloser
 }
 
-func bufcopy(w io.Writer, r io.Reader, buflen int, count int) (int64, error) {
-	c_in := make(chan []byte, count)
-	c_out := make(chan []byte)
-	c_err := make(chan error)
-	for i := 0; i < count; i++ {
-		c_in <- make([]byte, buflen)
+func (buf *limitedBuf) Read(p []byte) (n int, err error) {
+	n, err = buf.r.Read(p)
+        buf.s.Add(n)
+	return n, err
+}
+
+func (buf *limitedBuf) Write(p []byte) (n int, err error) {
+	for err == nil && len(p) > 0 {
+            n_ := buf.s.Sub(len(p))
+            n_, err = buf.w.Write(p[:n_])
+            p = p[n_:]
+            n += n_
 	}
+	return n, err
+}
+
+func Copy(w io.Writer, r io.Reader, buflen int) (int64, error) {
+        var pipe BufferedPipe
+        buf := limitedBuf{
+            r: &pipe,
+            w: &pipe,
+        }
+        buf.s.Add(buflen)
 	go func() {
-		var err error
-		for err == nil {
-			buf := <-c_in
-			var n int
-			n, err = r.Read(buf)
-			buf = buf[:n]
-			c_out <- buf
-		}
-		if err == io.EOF {
-			err = nil
-		}
-		c_err <- err
+		io.Copy(&buf, r)
+		pipe.Close()
 	}()
-	var length int64
-	for {
-		select {
-		case err := <-c_err:
-			return length, err
-		case buf := <-c_out:
-			n, err := w.Write(buf)
-			length += int64(n)
-			if err != nil {
-				return length, err
-			}
-			c_in <- buf[:cap(buf)]
-		}
-	}
+	return io.Copy(w, &buf)
 }
