@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"runtime"
+	"sync"
 	"sync/atomic"
 )
 
@@ -24,8 +25,9 @@ type pipe struct {
 	inWake  chan struct{} // Signaler for the reader, if it's asleep
 	outWake chan struct{} // Signaler for the writer, if it's asleep
 
-	inQuit  chan struct{} // Quit channel when the reader terminates
-	outQuit chan struct{} // Quit channel when the writer terminates
+	inQuit      chan struct{} // Quit channel when the reader terminates
+	outQuit     chan struct{} // Quit channel when the writer terminates
+	outQuitLock sync.Mutex    // Lock to prevent multiple quit channel closes
 
 	inErr  error // If reader closed, error to give writes
 	outErr error // If writer closed, error to give reads
@@ -163,8 +165,9 @@ func (p *pipe) outputWait() (int32, error) {
 			case <-p.inQuit: // input done, return
 				safeFree = atomic.LoadInt32(&p.free)
 				if safeFree != p.size {
-					continue
+					return safeFree, nil
 				}
+				p.outputClose(nil)
 				return safeFree, p.inErr
 
 			case <-p.outQuit: // output closed prematurely
@@ -329,8 +332,16 @@ func (p *pipe) readFrom(r io.Reader) (read int64, failure error) {
 // OutputClose terminates the writer endpoint, notifying further reads of the
 // specified error.
 func (p *pipe) outputClose(err error) {
+	p.outQuitLock.Lock()
+	defer p.outQuitLock.Unlock()
+
 	p.outErr = err
-	close(p.outQuit)
+	select {
+	case <-p.outQuit:
+		return
+	default:
+		close(p.outQuit)
+	}
 }
 
 // InputClose terminates the reader endpoint, notifying any reads after the
@@ -340,5 +351,9 @@ func (p *pipe) inputClose(err error) {
 		err = io.EOF
 	}
 	p.inErr = err
+
 	close(p.inQuit)
+	if atomic.LoadInt32(&p.free) != p.size {
+		<-p.outQuit
+	}
 }
