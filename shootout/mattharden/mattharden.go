@@ -1,23 +1,46 @@
 package mattharden
 
 import (
-	"bufio"
 	"io"
 )
 
-func Copy(w io.Writer, r io.Reader, buflen int) (int64, error) {
-	pr, pw := io.Pipe()
-	go func() {
-		_, err := io.Copy(pw, bufio.NewReaderSize(r, buflen))
-		pw.CloseWithError(err)
-	}()
-	bw := bufio.NewWriterSize(w, buflen)
-	n, err := io.Copy(bw, pr)
-	if err == nil {
-		err = bw.Flush()
-	} else {
-		// Ignoring error from Flush in favor of the previous error
-		bw.Flush()
+type limitedBuf struct {
+	s sema
+	r io.Reader
+	w io.WriteCloser
+}
+
+func (buf *limitedBuf) Init(size int) {
+	buf.s.Init(size)
+}
+
+func (buf *limitedBuf) Read(p []byte) (n int, err error) {
+	n, err = buf.r.Read(p)
+	buf.s.Add(n)
+	return n, err
+}
+
+func (buf *limitedBuf) Write(p []byte) (n int, err error) {
+	for err == nil && len(p) > 0 {
+		n_ := buf.s.Sub(len(p))
+		n_, err = buf.w.Write(p[:n_])
+		p = p[n_:]
+		n += n_
 	}
-	return n - int64(bw.Buffered()), err
+	return n, err
+}
+
+func Copy(w io.Writer, r io.Reader, buflen int) (int64, error) {
+	var pipe BufferedPipe
+	pipe.Init(buflen)
+	buf := limitedBuf{
+		r: &pipe,
+		w: &pipe,
+	}
+	buf.Init(buflen)
+	go func() {
+		io.Copy(&buf, r)
+		pipe.Close()
+	}()
+	return io.Copy(w, &buf)
 }
