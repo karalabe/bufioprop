@@ -1,16 +1,20 @@
 package augustoroman
 
 import (
+	"fmt"
 	"io"
-	"sync"
+	"runtime"
+	"sync/atomic"
 )
 
 // Pipe returns a buffered pipe that uses the provided byte array as a data
 // buffer. Providing a zero-length buffer will result in an inoperable pipe.
 func Pipe(buf []byte) (Reader, Writer) {
-	p := &pipe{Buf: buf}
-	p.dataReady.L = &p.mutex
-	p.buffersAvailable.L = &p.mutex
+	p := &pipe{
+		Buf:         buf,
+		dataReady:   make(chan token, 1),
+		bufferReady: make(chan token, 1),
+	}
 	return Reader{p}, Writer{p}
 }
 
@@ -38,37 +42,45 @@ func CopyWithBuffer(dst io.Writer, src io.Reader, buffer []byte) (int64, error) 
 	return n, <-errs // Return first error that came up.
 }
 
+type token struct{}
+
 type pipe struct {
 	Buf []byte
 
-	mutex            sync.Mutex
-	bytesWrittenIn   int
-	bytesReadOut     int
-	err              error
-	dataReady        sync.Cond
-	buffersAvailable sync.Cond
+	// atomic'd
+	bytesWrittenIn int64
+	bytesReadOut   int64
+	err            atomic.Value
+
+	dataReady   chan token
+	bufferReady chan token
 }
 
 type Reader struct{ *pipe }
 type Writer struct{ *pipe }
 
-func (r Reader) Read(buf []byte) (n int, err error)        { return r.pipe.read(buf) }
-func (r Reader) WriteTo(w io.Writer) (n int64, err error)  { return r.pipe.writeTo(w) }
-func (r Reader) Close() error                              { return r.pipe.close() }
-func (w Writer) Write(data []byte) (n int, err error)      { return w.pipe.write(data) }
-func (w Writer) ReadFrom(r io.Reader) (n int64, err error) { return w.pipe.readFrom(r) }
-func (w Writer) Close() error                              { return w.pipe.close() }
+func (r Reader) Read(buf []byte) (n int, err error)        { return r.read(buf) }
+func (r Reader) WriteTo(w io.Writer) (n int64, err error)  { return r.writeTo(w) }
+func (r Reader) Close() error                              { return r.close() }
+func (w Writer) Write(data []byte) (n int, err error)      { return w.write(data) }
+func (w Writer) ReadFrom(r io.Reader) (n int64, err error) { return w.readFrom(r) }
+func (w Writer) Close() error                              { return w.close() }
 
 func (b *pipe) close() error {
-	b.mutex.Lock()
-	ret := b.err
-	if b.err == nil || b.err == io.EOF {
-		b.err = io.EOF
+	err, _ := b.err.Load().(error)
+	ret := err
+	if err == nil || err == io.EOF {
+		err = io.EOF
 		ret = nil
 	}
-	b.mutex.Unlock()
-	b.dataReady.Signal()
-	b.buffersAvailable.Signal()
+	select {
+	case b.bufferReady <- token{}:
+	default:
+	}
+	select {
+	case b.dataReady <- token{}:
+	default:
+	}
 	return ret
 }
 
@@ -164,71 +176,82 @@ all:
 }
 
 func (b *pipe) getDataChunks() (data1, data2 []byte, err error) {
-	b.mutex.Lock()
-	defer b.mutex.Unlock()
-	for {
-		N := len(b.Buf)
-		nextRead, nextWrite := b.bytesReadOut%N, b.bytesWrittenIn%N
-		full := (b.bytesWrittenIn - b.bytesReadOut) == N
-		if nextRead < nextWrite {
-			// [    R------W     ]
-			return b.Buf[nextRead:nextWrite], nil, nil
-		} else if nextRead > nextWrite {
-			// [----W       R----]
-			return b.Buf[nextRead:], b.Buf[:nextWrite], nil
-		} else if full {
-			// [--------R/W------] FULL
-			return b.Buf[nextRead:], b.Buf[:nextWrite], nil
-		} else if b.err != nil {
-			return nil, nil, b.err
+	read := atomic.LoadInt64(&b.bytesReadOut)
+	for i := 0; ; i++ {
+		written := atomic.LoadInt64(&b.bytesWrittenIn)
+		empty := written == read
+		if !empty {
+			data1, data2 = getCircularBufferChunks(b.Buf, read, written)
+			return data1, data2, nil
+		} else if i < 16 {
+			runtime.Gosched()
+		} else if err, _ = b.err.Load().(error); err != nil {
+			return nil, nil, err
+		} else {
+			<-b.dataReady
 		}
-		// [        R/W      ] !FULL
-		// Wait for data to be available or the buffer to be closed.
-		b.dataReady.Wait()
 	}
 }
 
 func (b *pipe) getEmptyChunks() (chunk1, chunk2 []byte, err error) {
-	b.mutex.Lock()
-	defer b.mutex.Unlock()
-	for {
-		N := len(b.Buf)
-		nextRead, nextWrite := b.bytesReadOut%N, b.bytesWrittenIn%N
-		empty := b.bytesWrittenIn == b.bytesReadOut
-		if nextRead < nextWrite {
-			// [    R------W     ]
-			return b.Buf[nextWrite:], b.Buf[:nextRead], nil
-		} else if nextRead > nextWrite {
-			// [----W       R----]
-			return b.Buf[nextWrite:nextRead], nil, nil
-		} else if empty {
-			// [        R/W      ] EMPTY
-			return b.Buf[nextWrite:], b.Buf[:nextRead], nil
-		} else if b.err != nil {
-			return nil, nil, b.err
+	N := int64(len(b.Buf))
+	written := atomic.LoadInt64(&b.bytesWrittenIn)
+	for i := 0; ; i++ {
+		read := atomic.LoadInt64(&b.bytesReadOut)
+		full := (written - read) == N
+		if !full {
+			chunk1, chunk2 = getCircularBufferChunks(b.Buf, written, read+N)
+			return chunk1, chunk2, nil
+		} else if i < 16 {
+			runtime.Gosched()
+		} else if err, _ = b.err.Load().(error); err != nil {
+			return nil, nil, err
+		} else {
+			<-b.bufferReady
 		}
-		// [--------R/W------] FULL (== !EMPTY)
-		// Wait for buffer space to be available or the buffer to be closed.
-		b.buffersAvailable.Wait()
 	}
 }
 
 func (b *pipe) commitWrite(nn int, err error) {
-	b.mutex.Lock()
-	if b.err == nil {
-		b.err = err
+	atomic.AddInt64(&b.bytesWrittenIn, int64(nn))
+	if err != nil {
+		b.err.Store(err)
 	}
-	b.bytesWrittenIn += nn
-	b.mutex.Unlock()
-	b.dataReady.Signal()
+	select {
+	case b.dataReady <- token{}:
+	default:
+	}
 }
 
 func (b *pipe) commitRead(n int, err error) {
-	b.mutex.Lock()
-	if b.err == nil {
-		b.err = err
+	atomic.AddInt64(&b.bytesReadOut, int64(n))
+	if err != nil {
+		b.err.Store(err)
 	}
-	b.bytesReadOut += n
-	b.mutex.Unlock()
-	b.buffersAvailable.Signal()
+	select {
+	case b.bufferReady <- token{}:
+	default:
+	}
+}
+
+func getCircularBufferChunks(buf []byte, from, to int64) (first, second []byte) {
+	N := int64(len(buf))
+
+	// Empty!
+	if from == to {
+		panic(fmt.Errorf("Empty buffers requested!  "+
+			"From:%d To:%d Delta:%d N:%d", from, to, to-from, N))
+	} else if to-from > N {
+		panic(fmt.Errorf("More data is in the buffer than the buffer size!  "+
+			"From:%d To:%d Delta:%d N:%d", from, to, to-from, N))
+	}
+
+	start, end := from%N, to%N
+	if start < end {
+		// [    S------E     ]
+		return buf[start:end], nil
+	}
+	// [----E       S----]
+	// [--------ES-------]
+	return buf[start:], buf[:end]
 }
